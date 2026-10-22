@@ -1,0 +1,12 @@
+Mduel game artwork in this directory is from pwmckenna/mduel:
+https://github.com/pwmckenna/mduel/tree/master/app/images
+
+The source repository README identifies the project as licensed under the GNU
+General Public License. The GitHub API does not identify a license file for
+that repository; its README links to the GNU GPL, which currently resolves to
+version 3. This reboot is distributed under GNU GPL version 3; see the root
+LICENSE file.
+
+The files are redistributed without modification. The source project credits
+the original Mduel game to Duncan Gill and identifies pwmckenna/mduel as a
+derivative. This notice does not claim ownership of the included artwork.
