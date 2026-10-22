@@ -4,6 +4,10 @@ A browser reboot of classic Mduel. The current MVP slice has a two-player
 platform arena, local play, online rooms, and sprites from the legacy Mduel
 project.
 
+I used to play this with my brother and friends all the time. I wanted a way to
+do so online. I found a few old repos online and used AI to bring it back to
+life.
+
 ## Run locally
 
 Python 3 is the only local requirement:
