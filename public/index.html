@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#11131b">
+    <meta name="description" content="A local canvas and keyboard-input smoke test for Mduel Online.">
+    <title>Mduel Online — First Test</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="masthead">
+        <p class="eyebrow">REBOOT · TEST 01</p>
+        <h1>Mduel Online</h1>
+        <p class="intro">A small first check of the canvas and local controls.</p>
+      </header>
+
+      <section class="test-panel" aria-labelledby="test-title">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">LOCAL ONLY</p>
+            <h2 id="test-title">Canvas and input test</h2>
+          </div>
+          <span id="test-status" class="status" role="status">Loading test…</span>
+        </div>
+
+        <canvas
+          id="game-canvas"
+          aria-label="Local input test. Move the blue marker with WASD and the orange marker with the arrow keys."
+          tabindex="0"
+        ></canvas>
+
+        <div class="test-controls">
+          <p><span class="key-group">W A S D</span> Blue marker</p>
+          <p><span class="key-group">← ↑ ↓ →</span> Orange marker</p>
+          <button id="start-test" type="button">Start input test</button>
+        </div>
+        <p class="notice">
+          Scaffold only: no original sprites, sounds, game physics, or online
+          connection are included yet.
+        </p>
+      </section>
+
+      <footer>Next: inventory the original game and clear asset reuse rights.</footer>
+    </main>
+  </body>
+</html>
