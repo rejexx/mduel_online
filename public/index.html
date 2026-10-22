@@ -4,46 +4,106 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#11131b">
-    <meta name="description" content="A local canvas and keyboard-input smoke test for Mduel Online.">
-    <title>Mduel Online — First Test</title>
+    <meta name="description" content="A browser reboot of classic Mduel. Play a local duel or invite a friend online.">
+    <title>Mduel Online</title>
     <link rel="stylesheet" href="/styles.css">
+    <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js" defer></script>
     <script type="module" src="/app.js"></script>
   </head>
   <body>
     <main class="shell">
       <header class="masthead">
-        <p class="eyebrow">REBOOT · TEST 01</p>
-        <h1>Mduel Online</h1>
-        <p class="intro">A small first check of the canvas and local controls.</p>
+        <p class="eyebrow">A CLASSIC DUEL, REBOOTED</p>
+        <h1>Mduel</h1>
+        <p class="intro">Climb, jump, and knock your rival into the pit.</p>
       </header>
 
-      <section class="test-panel" aria-labelledby="test-title">
+      <section id="lobby" class="panel lobby" aria-labelledby="lobby-title">
         <div class="panel-heading">
           <div>
-            <p class="eyebrow">LOCAL ONLY</p>
-            <h2 id="test-title">Canvas and input test</h2>
+            <p class="eyebrow">TWO PLAYERS</p>
+            <h2 id="lobby-title">Choose how to play</h2>
           </div>
-          <span id="test-status" class="status" role="status">Loading test…</span>
+          <span id="network-status" class="status" role="status">Ready</span>
         </div>
 
-        <canvas
-          id="game-canvas"
-          aria-label="Local input test. Move the blue marker with WASD and the orange marker with the arrow keys."
-          tabindex="0"
-        ></canvas>
-
-        <div class="test-controls">
-          <p><span class="key-group">W A S D</span> Blue marker</p>
-          <p><span class="key-group">← ↑ ↓ →</span> Orange marker</p>
-          <button id="start-test" type="button">Start input test</button>
+        <div class="lobby-actions">
+          <button id="local-game" type="button">Play on this device</button>
+          <button id="create-room" class="button-secondary" type="button">Create online room</button>
         </div>
+
+        <form id="join-form" class="join-form">
+          <label for="room-code">Or join a friend's room</label>
+          <div class="join-row">
+            <input id="room-code" name="room-code" type="text" maxlength="8"
+              autocomplete="off" autocapitalize="characters" placeholder="ROOM CODE"
+              aria-describedby="join-help">
+            <button id="join-room" class="button-secondary" type="submit">Join</button>
+          </div>
+          <p id="join-help" class="hint">Ask your friend for their 6-character invite code.</p>
+        </form>
+
+        <section id="invite-panel" class="invite-panel" hidden aria-live="polite">
+          <p class="eyebrow">INVITE A FRIEND</p>
+          <p class="invite-code" id="invite-code"></p>
+          <label class="sr-only" for="invite-link">Invite link</label>
+          <div class="join-row">
+            <input id="invite-link" type="url" readonly>
+            <button id="copy-invite" class="button-secondary" type="button">Copy link</button>
+          </div>
+          <p id="invite-status" class="hint">Waiting for your friend to join…</p>
+        </section>
+
         <p class="notice">
-          Scaffold only: no original sprites, sounds, game physics, or online
-          connection are included yet.
+          Online rooms use PeerJS's public signaling service to connect players.
+          Gameplay is sent directly between browsers.
         </p>
       </section>
 
-      <footer>Next: inventory the original game and clear asset reuse rights.</footer>
+      <section id="game-panel" class="panel game-panel" aria-label="Mduel match" hidden>
+        <div class="game-heading">
+          <div>
+            <p class="eyebrow" id="match-type">LOCAL MATCH</p>
+            <h2 id="match-status" role="status">Ready to play</h2>
+          </div>
+          <button id="leave-game" class="button-tertiary" type="button">Leave match</button>
+        </div>
+
+        <canvas id="game-canvas" width="1280" height="800"
+          aria-label="Mduel arena. Jump between platforms and knock your opponent into the pit."></canvas>
+
+        <div id="match-result" class="match-result" hidden>
+          <p id="winner-message"></p>
+          <button id="rematch" type="button">Play again</button>
+        </div>
+
+        <div class="control-guide">
+          <p><span class="player-label blue">P1</span> <kbd>←</kbd><kbd>→</kbd> move
+            <kbd>↑</kbd> jump/climb <kbd>Enter</kbd> duel</p>
+          <p><span class="player-label orange">P2</span> <kbd>A</kbd><kbd>D</kbd> move
+            <kbd>W</kbd> jump/climb <kbd>Q</kbd> duel</p>
+        </div>
+        <div class="touch-controls" aria-label="Touch controls">
+          <div class="touch-player" data-touch-player="1">
+            <span class="player-label blue">P1</span>
+            <button type="button" data-player="1" data-key="left" aria-label="Player 1 move left">◀</button>
+            <button type="button" data-player="1" data-key="right" aria-label="Player 1 move right">▶</button>
+            <button type="button" data-player="1" data-key="up" aria-label="Player 1 jump or climb up">Up</button>
+            <button type="button" data-player="1" data-key="down" aria-label="Player 1 climb down">Down</button>
+            <button type="button" data-player="1" data-key="attack" aria-label="Player 1 duel">Duel</button>
+          </div>
+          <div class="touch-player" data-touch-player="2">
+            <span class="player-label orange">P2</span>
+            <button type="button" data-player="2" data-key="left" aria-label="Player 2 move left">◀</button>
+            <button type="button" data-player="2" data-key="right" aria-label="Player 2 move right">▶</button>
+            <button type="button" data-player="2" data-key="up" aria-label="Player 2 jump or climb up">Up</button>
+            <button type="button" data-player="2" data-key="down" aria-label="Player 2 climb down">Down</button>
+            <button type="button" data-player="2" data-key="attack" aria-label="Player 2 duel">Duel</button>
+          </div>
+        </div>
+      </section>
+
+      <footer>First player to send the other into the pit three times wins.</footer>
     </main>
   </body>
 </html>
