@@ -2,9 +2,15 @@ export const WORLD = { width: 640, height: 400 };
 
 const PLAYER_WIDTH = 64;
 const PLAYER_HEIGHT = 56;
+const PLAYER_BOUNDS = {
+  standing: { left: 10, right: 54 },
+  crouching: { left: 22, right: 42 }
+};
 const GRAVITY = 900;
 const RUN_SPEED = 96;
 const JUMP_SPEED = 300;
+const MAX_FALL_SPEED = 360;
+const CROUCH_FRAME = 5;
 const PLATFORMS = [
   ...[2, 3, 4, 5, 12, 13, 14, 15].map((column) => ({
     x: column * 32 + 32,
@@ -73,7 +79,8 @@ function createPlayer(id, x, color, facing) {
     attackCooldown: 0,
     attackTimer: 0,
     attackHit: false,
-    climbing: false
+    climbing: false,
+    crouching: false
   };
 }
 
@@ -89,26 +96,29 @@ export function createGame() {
   };
 }
 
-function overlapsPlatform(player, platform) {
-  return player.x + PLAYER_WIDTH > platform.x &&
-    player.x < platform.x + platform.width;
+function playerBounds(player) {
+  const dimensions = player.crouching ? PLAYER_BOUNDS.crouching : PLAYER_BOUNDS.standing;
+  return {
+    left: player.x + dimensions.left,
+    right: player.x + dimensions.right,
+    top: player.y + 8,
+    bottom: player.y + PLAYER_HEIGHT
+  };
 }
 
-function updatePlayer(player, input, opponent, delta) {
-  if (player.stun > 0) {
-    player.stun = Math.max(0, player.stun - delta);
-  } else {
+function updatePlayer(player, input, delta) {
+  const stunned = player.stun > 0;
+  player.stun = Math.max(0, player.stun - delta);
+
+  if (!stunned) {
     const direction = Number(input.right === true) - Number(input.left === true);
-    if (direction !== 0) {
-      player.vx = direction * RUN_SPEED;
-      player.facing = direction;
-    } else {
-      player.vx *= Math.pow(0.001, delta);
-    }
+    player.vx = direction * RUN_SPEED;
+    if (direction !== 0) player.facing = direction;
 
     if (input.jump && player.grounded) {
       player.vy = -JUMP_SPEED;
       player.grounded = false;
+      player.crouching = false;
     }
 
     if (input.attack && player.attackCooldown <= 0) {
@@ -126,12 +136,18 @@ function updatePlayer(player, input, opponent, delta) {
     player.y < item.bottom &&
     player.y + PLAYER_HEIGHT > item.top
   );
-  player.climbing = Boolean(rope && (input.up || input.down));
+  player.climbing = Boolean(rope &&
+    ((input.up && player.y > rope.top) ||
+      (input.down && player.y + PLAYER_HEIGHT < rope.bottom)));
+  player.crouching = Boolean(
+    !stunned && !player.climbing && player.grounded && input.down === true
+  );
+
   if (player.climbing) {
     player.vx = 0;
-    player.vy = (Number(input.down) - Number(input.up)) * 155;
+    player.vy = (Number(input.down === true) - Number(input.up === true)) * 155;
   } else {
-    player.vy = Math.min(360, player.vy + GRAVITY * delta);
+    player.vy = Math.min(MAX_FALL_SPEED, player.vy + GRAVITY * delta);
   }
 
   const previousBottom = player.y + PLAYER_HEIGHT;
@@ -140,19 +156,26 @@ function updatePlayer(player, input, opponent, delta) {
   player.grounded = false;
 
   if (!player.climbing) {
+    let landingY = Infinity;
     for (const platform of PLATFORMS) {
       const newBottom = player.y + PLAYER_HEIGHT;
       if (player.vy >= 0 &&
           previousBottom <= platform.y &&
           newBottom >= platform.y &&
-          overlapsPlatform(player, platform)) {
-        player.y = platform.y - PLAYER_HEIGHT;
-        player.vy = 0;
-        player.grounded = true;
-        break;
+          playerBounds(player).right > platform.x &&
+          playerBounds(player).left < platform.x + platform.width &&
+          platform.y < landingY) {
+        landingY = platform.y;
       }
     }
+    if (landingY !== Infinity) {
+      player.y = landingY - PLAYER_HEIGHT;
+      player.vy = 0;
+      player.grounded = true;
+      player.crouching = Boolean(!stunned && input.down === true);
+    }
   }
+  if (!player.grounded) player.crouching = false;
 
   if (player.climbing) {
     const activeRope = ROPES.find((item) => Math.abs(player.x + PLAYER_WIDTH / 2 - item.x) < 9);
@@ -163,25 +186,102 @@ function updatePlayer(player, input, opponent, delta) {
 
   if (player.x < 0) {
     player.x = 0;
-    player.vx = Math.abs(player.vx) * 0.35;
+    player.vx = 0;
     player.facing = 1;
   } else if (player.x + PLAYER_WIDTH > WORLD.width) {
     player.x = WORLD.width - PLAYER_WIDTH;
-    player.vx = -Math.abs(player.vx) * 0.35;
+    player.vx = 0;
     player.facing = -1;
   }
+}
 
-  if (player.attackTimer > 0 &&
-      !player.attackHit &&
-      Math.sign(opponent.x + PLAYER_WIDTH / 2 - (player.x + PLAYER_WIDTH / 2)) === player.facing &&
-      Math.abs(opponent.x + PLAYER_WIDTH / 2 - (player.x + PLAYER_WIDTH / 2)) < 76 &&
-      Math.abs(opponent.y - player.y) < 42) {
+function resolvePlayerCollision(first, second) {
+  let firstBounds = playerBounds(first);
+  let secondBounds = playerBounds(second);
+  const overlapX = Math.min(firstBounds.right, secondBounds.right) -
+    Math.max(firstBounds.left, secondBounds.left);
+  const overlapY = Math.min(firstBounds.bottom, secondBounds.bottom) -
+    Math.max(firstBounds.top, secondBounds.top);
+  if (overlapX <= 0 || overlapY <= 0) return;
+
+  const firstIsAbove = firstBounds.top < secondBounds.top;
+  const upper = firstIsAbove ? first : second;
+  const lower = firstIsAbove ? second : first;
+  const upperBounds = firstIsAbove ? firstBounds : secondBounds;
+  const lowerBounds = firstIsAbove ? secondBounds : firstBounds;
+  const canLandOnOpponent = lower.vy >= 0 && upper.vy >= lower.vy && overlapY < overlapX;
+
+  if (canLandOnOpponent) {
+    upper.y -= upperBounds.bottom - lowerBounds.top;
+    upper.vy = 0;
+    upper.grounded = true;
+    return;
+  }
+
+  const firstCenter = (firstBounds.left + firstBounds.right) / 2;
+  const secondCenter = (secondBounds.left + secondBounds.right) / 2;
+  const direction = firstCenter === secondCenter
+    ? (first.id < second.id ? -1 : 1)
+    : Math.sign(firstCenter - secondCenter);
+  first.x += direction * overlapX / 2;
+  second.x -= direction * overlapX / 2;
+
+  first.x = Math.max(0, Math.min(WORLD.width - PLAYER_WIDTH, first.x));
+  second.x = Math.max(0, Math.min(WORLD.width - PLAYER_WIDTH, second.x));
+
+  firstBounds = playerBounds(first);
+  secondBounds = playerBounds(second);
+  const remainingOverlap = Math.min(firstBounds.right, secondBounds.right) -
+    Math.max(firstBounds.left, secondBounds.left);
+  if (remainingOverlap > 0) {
+    if (direction < 0) {
+      const movedSecond = Math.min(
+        remainingOverlap,
+        WORLD.width - PLAYER_WIDTH - second.x
+      );
+      second.x += movedSecond;
+      first.x = Math.max(0, first.x - (remainingOverlap - movedSecond));
+    } else {
+      const movedFirst = Math.min(
+        remainingOverlap,
+        WORLD.width - PLAYER_WIDTH - first.x
+      );
+      first.x += movedFirst;
+      second.x = Math.max(0, second.x - (remainingOverlap - movedFirst));
+    }
+  }
+
+  if (first.vx * direction < 0) first.vx = 0;
+  if (second.vx * direction > 0) second.vx = 0;
+}
+
+function resolveAttacks(players) {
+  for (const player of players) {
+    const opponent = players.find((candidate) => candidate !== player);
+    const playerBounds = getAttackBounds(player);
+    const opponentBounds = getAttackBounds(opponent);
+    if (player.attackTimer <= 0 ||
+        player.attackHit ||
+        Math.sign(opponentBounds.centerX - playerBounds.centerX) !== player.facing ||
+        Math.abs(opponentBounds.centerX - playerBounds.centerX) >= 76 ||
+        Math.abs(opponentBounds.centerY - playerBounds.centerY) >= 42) {
+      continue;
+    }
     opponent.vx = player.facing * 365;
     opponent.vy = -260;
     opponent.grounded = false;
+    opponent.crouching = false;
     opponent.stun = 0.2;
     player.attackHit = true;
   }
+}
+
+function getAttackBounds(player) {
+  const bounds = playerBounds(player);
+  return {
+    centerX: (bounds.left + bounds.right) / 2,
+    centerY: (bounds.top + bounds.bottom) / 2
+  };
 }
 
 export function stepGame(game, inputs, deltaSeconds) {
@@ -189,8 +289,10 @@ export function stepGame(game, inputs, deltaSeconds) {
 
   const delta = Math.min(Math.max(deltaSeconds, 0), 0.04);
   game.elapsed += delta;
-  updatePlayer(game.players[0], inputs[0] ?? {}, game.players[1], delta);
-  updatePlayer(game.players[1], inputs[1] ?? {}, game.players[0], delta);
+  updatePlayer(game.players[0], inputs[0] ?? {}, delta);
+  updatePlayer(game.players[1], inputs[1] ?? {}, delta);
+  resolvePlayerCollision(game.players[0], game.players[1]);
+  resolveAttacks(game.players);
 
   for (const player of game.players) {
     if (player.y > WORLD.height + PLAYER_HEIGHT) {
@@ -209,6 +311,8 @@ export function stepGame(game, inputs, deltaSeconds) {
         player.facing = player.id === 1 ? 1 : -1;
         player.grounded = true;
         player.stun = 0;
+        player.climbing = false;
+        player.crouching = false;
       }
     }
   }
@@ -224,6 +328,8 @@ function drawPlayer(context, player, elapsed) {
   let frame = 0;
   if (player.climbing) {
     frame = 39 + Math.floor(elapsed * 8) % 5;
+  } else if (player.crouching) {
+    frame = CROUCH_FRAME;
   } else if (player.vy < -35) {
     frame = 11 + Math.floor(elapsed * 9) % 7;
   } else if (player.vy > 90) {
@@ -256,6 +362,8 @@ export function drawGame(context, game, pixelRatio = 1) {
   context.canvas.dataset.player2X = game.players[1].x.toFixed(1);
   context.canvas.dataset.player1Stocks = String(game.players[0].stocks);
   context.canvas.dataset.player2Stocks = String(game.players[1].stocks);
+  context.canvas.dataset.player1Crouching = String(game.players[0].crouching);
+  context.canvas.dataset.player2Crouching = String(game.players[1].crouching);
   context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
   context.clearRect(0, 0, WORLD.width, WORLD.height);
 

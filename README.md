@@ -20,8 +20,8 @@ Open <http://localhost:8080>.
 
 ### Controls
 
-- **Player 1:** Left/right arrows move, up/down climb (up also jumps), Enter duel.
-- **Player 2:** A/D move, W/S climb (W also jumps), Q duel.
+- **Player 1:** Left/right arrows move, up jumps/climbs, down crouches/climbs down, Enter duels.
+- **Player 2:** A/D move, W jumps/climbs, S crouches/climbs down, Q duels.
 - On touch devices, use the on-screen buttons.
 - First player to knock the other player into the pit three times wins.
 
@@ -49,9 +49,11 @@ before merging.
 
 ## Current limitations
 
-- This is a simplified arena and combat loop, not a full recreation of the
-  original physics, pickups, sound, or modes. Legacy character, platform, rope,
-  power-up, pit, and pickup sprite sheets are included.
+- The arena and combat loop are still simplified. Movement, player/platform
+  collisions, and crouching have received an initial physics pass, but still
+  need playtesting and tuning against the DS reference. Pickups, sound, and
+  other modes are not implemented. Legacy character, platform, rope, power-up,
+  pit, and pickup sprite sheets are included.
 - Online match setup and synchronization are an initial prototype; there is no
   matchmaking, account system, room persistence, TURN fallback, or hosted
   signaling SLA.
