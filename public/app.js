@@ -106,6 +106,7 @@ function currentInput(playerNumber) {
     up: keys.has("up"),
     down: keys.has("down"),
     jump: tap.has("up"),
+    roll: tap.has("down"),
     attack: tap.has("attack")
   };
 }
@@ -127,6 +128,7 @@ function postInput() {
     },
     pressed: {
       jump: pressed[2].has("up"),
+      roll: pressed[2].has("down"),
       attack: pressed[2].has("attack")
     }
   };
@@ -145,6 +147,7 @@ function normalizeInput(input) {
     up: input?.held?.up === true,
     down: input?.held?.down === true,
     jump: input?.pressed?.jump === true,
+    roll: input?.pressed?.roll === true,
     attack: input?.pressed?.attack === true
   };
 }
@@ -247,6 +250,7 @@ function handleConnectionMessage(message) {
       down: message.held?.down === true
     };
     if (message.pressed?.jump === true) peerInputs.pressed.jump = true;
+    if (message.pressed?.roll === true) peerInputs.pressed.roll = true;
     if (message.pressed?.attack === true) peerInputs.pressed.attack = true;
     return;
   }
@@ -412,7 +416,7 @@ function submitControl(playerNumber, control, isDown) {
   if (!INPUT_KEYS.includes(control)) return;
   if (isDown) {
     if (!held[playerNumber].has(control) &&
-        (control === "up" || control === "attack")) {
+        (control === "up" || control === "down" || control === "attack")) {
       pressed[playerNumber].add(control);
     }
     held[playerNumber].add(control);
