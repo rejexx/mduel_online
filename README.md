@@ -22,6 +22,7 @@ Open <http://localhost:8080>.
 
 - **Player 1:** Left/right arrows move, up jumps/climbs, down crouches/climbs down; press down while moving to roll. Enter duels.
 - **Player 2:** A/D move, W jumps/climbs, S crouches/climbs down; press S while moving to roll. Q duels.
+- Jump direction is set at takeoff; you cannot steer during a jump or collision fall.
 - On touch devices, use the on-screen buttons.
 - First player to knock the other player into the pit three times wins.
 

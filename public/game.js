@@ -18,9 +18,8 @@ const ROLL_DURATION = 0.4;
 const PIT_SURFACE_Y = 368;
 const PIT_SPLASH_DURATION = 0.72;
 const PIT_SINK_DURATION = 0.8;
-const PIT_SINK_SPEED = 52;
 const COLLISION_FRAMES = [26, 27, 26, 24];
-const BOUNCE_FRAMES = [21, 21, 26, 27];
+const TRIP_FRAMES = [26, 27];
 const COLLISION_RECOIL = 220;
 const COLLISION_JUMP = -200;
 const COLLISION_DURATION = 0.28;
@@ -154,9 +153,8 @@ function playerFeet(player) {
 function updatePlayer(player, input, delta) {
   if (player.inPit) {
     player.pitTimer += delta;
-    player.y += PIT_SINK_SPEED * delta;
+    player.y += player.vy * delta;
     player.vx = 0;
-    player.vy = PIT_SINK_SPEED;
     player.grounded = false;
     player.crouching = false;
     player.rolling = false;
@@ -194,11 +192,11 @@ function updatePlayer(player, input, delta) {
   if (!stunned && !impacted) {
     if (player.rolling) {
       player.vx = player.facing * RUN_SPEED;
-    } else if (player.crouching || player.climbing) {
+    } else if (player.climbing) {
       player.vx = 0;
-    } else {
-      player.vx = direction * RUN_SPEED;
-      if (direction !== 0) player.facing = direction;
+    } else if (player.grounded) {
+      player.vx = player.crouching ? 0 : direction * RUN_SPEED;
+      if (!player.crouching && direction !== 0) player.facing = direction;
     }
 
     if (input.jump && player.grounded && !player.crouching && !player.rolling && !player.climbing) {
@@ -253,6 +251,7 @@ function updatePlayer(player, input, delta) {
   }
   if (!player.grounded) player.crouching = false;
   if (!player.grounded) player.rolling = false;
+  if (player.grounded && player.impactTimer === 0) player.impactAnimation = null;
 
   if (player.climbing) {
     const activeRope = ROPES.find((item) => Math.abs(player.x + PLAYER_WIDTH / 2 - item.x) < 9);
@@ -313,8 +312,8 @@ function separatePlayers(first, second, direction, overlapX) {
   }
 }
 
-function launchPlayer(player, direction, verticalSpeed, animation) {
-  player.vx = direction * COLLISION_RECOIL;
+function launchPlayer(player, direction, verticalSpeed, animation, horizontalSpeed = COLLISION_RECOIL) {
+  player.vx = direction * horizontalSpeed;
   player.vy = verticalSpeed;
   player.grounded = false;
   player.crouching = false;
@@ -359,9 +358,10 @@ function resolvePlayerCollision(first, second, react) {
   if (croucher && standing.grounded) {
     launchPlayer(
       standing,
-      standing === first ? direction : -direction,
+      standing.facing,
       COLLISION_JUMP,
-      "pop"
+      "trip",
+      RUN_SPEED
     );
     return;
   }
@@ -448,7 +448,6 @@ export function stepGame(game, inputs, deltaSeconds) {
       player.inPit = true;
       player.pitTimer = 0;
       player.y = PIT_SURFACE_Y - PLAYER_HEIGHT;
-      player.vy = PIT_SINK_SPEED;
       player.vx = 0;
       player.rolling = false;
       player.crouching = false;
@@ -477,10 +476,14 @@ function drawPlayer(context, player, elapsed) {
   if (blink) return;
 
   let frame = 0;
-  if (player.climbing) {
+  if (player.inPit) {
+    frame = 21;
+  } else if (player.climbing) {
     frame = 39 + Math.floor(elapsed * 8) % 5;
+  } else if (player.impactAnimation === "trip" && !player.grounded) {
+    frame = TRIP_FRAMES[Math.floor(elapsed * 12) % TRIP_FRAMES.length];
   } else if (player.impactTimer > 0) {
-    const frames = player.impactAnimation === "pop" ? BOUNCE_FRAMES : COLLISION_FRAMES;
+    const frames = player.impactAnimation === "trip" ? TRIP_FRAMES : COLLISION_FRAMES;
     const frameIndex = Math.min(
       frames.length - 1,
       Math.floor(((COLLISION_DURATION - player.impactTimer) / COLLISION_DURATION) * frames.length)
