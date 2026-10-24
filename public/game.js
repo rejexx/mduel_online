@@ -22,6 +22,7 @@ const COLLISION_FRAMES = [26, 27, 26, 24];
 const TRIP_FRAMES = [26, 27];
 const COLLISION_RECOIL = 220;
 const COLLISION_JUMP = -200;
+const TRIP_SPEED = 220;
 const COLLISION_DURATION = 0.28;
 const PLATFORMS = [
   ...[2, 3, 4, 5, 12, 13, 14, 15].map((column) => ({
@@ -361,7 +362,7 @@ function resolvePlayerCollision(first, second, react) {
       standing.facing,
       COLLISION_JUMP,
       "trip",
-      RUN_SPEED
+      TRIP_SPEED
     );
     return;
   }
