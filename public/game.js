@@ -9,15 +9,17 @@ const PLAYER_BOUNDS = {
   crouchingFeet: { left: 14, right: 40 }
 };
 const GRAVITY = 900;
-const RUN_SPEED = 96;
+const RUN_SPEED = 108;
 const JUMP_SPEED = 300;
 const MAX_FALL_SPEED = 360;
 const CROUCH_FRAME = 5;
 const ROLL_FRAMES = [7, 8, 9, 10, 5];
 const ROLL_DURATION = 0.4;
 const PIT_SURFACE_Y = 368;
-const PIT_SPLASH_DURATION = 0.72;
+const PIT_SPLASH_DURATION = 0.4;
 const PIT_SINK_DURATION = 0.8;
+const PIT_SPLASH_Y_OFFSET = 12;
+const PIT_SPLASH_FRAMES = [4, 5, 6, 7];
 const COLLISION_FRAMES = [26, 27, 26, 24];
 const TRIP_FRAMES = [26, 27];
 const COLLISION_RECOIL = 220;
@@ -76,6 +78,9 @@ const pitSprite = new Image();
 pitSprite.src = "/assets/mduel/marshmallowSprites.png";
 const pitFillerSprite = new Image();
 pitFillerSprite.src = "/assets/mduel/mallow.png";
+const effectSprite = new Image();
+effectSprite.src = "/assets/mduel/effectSprites.gif";
+let transparentEffectSprite = null;
 
 function createPlayer(id, x, color, facing) {
   return {
@@ -313,6 +318,25 @@ function separatePlayers(first, second, direction, overlapX) {
   }
 }
 
+function separateFromCrouchedPlayer(standing, crouched) {
+  const standingBounds = playerBounds(standing);
+  const crouchedBounds = playerBounds(crouched);
+  const overlapX = Math.min(standingBounds.right, crouchedBounds.right) -
+    Math.max(standingBounds.left, crouchedBounds.left);
+  if (overlapX <= 0) return;
+
+  const standingCenter = (standingBounds.left + standingBounds.right) / 2;
+  const crouchedCenter = (crouchedBounds.left + crouchedBounds.right) / 2;
+  const direction = standingCenter < crouchedCenter ? -1 : 1;
+  standing.x = Math.max(
+    0,
+    Math.min(
+      WORLD.width - PLAYER_WIDTH,
+      standing.x + direction * (overlapX + 0.1)
+    )
+  );
+}
+
 function launchPlayer(player, direction, verticalSpeed, animation, horizontalSpeed = COLLISION_RECOIL) {
   player.vx = direction * horizontalSpeed;
   player.vy = verticalSpeed;
@@ -340,30 +364,32 @@ function resolvePlayerCollision(first, second, react) {
   const direction = firstCenter === secondCenter
     ? (first.id < second.id ? -1 : 1)
     : Math.sign(firstCenter - secondCenter);
-  if (!react) {
-    const firstLow = first.crouching || first.rolling;
-    const secondLow = second.crouching || second.rolling;
-    const croucher = firstLow ? first : secondLow ? second : null;
-    const standing = croucher === first ? second : first;
-    if (croucher && standing.impactTimer > 0) return;
-    separatePlayers(first, second, direction, overlapX);
-    return;
-  }
-
   const firstLow = first.crouching || first.rolling;
   const secondLow = second.crouching || second.rolling;
   if (firstLow && secondLow) return;
-
   const croucher = firstLow ? first : secondLow ? second : null;
   const standing = croucher === first ? second : first;
-  if (croucher && standing.grounded) {
-    launchPlayer(
-      standing,
-      standing.facing,
-      COLLISION_JUMP,
-      "trip",
-      TRIP_SPEED
-    );
+
+  if (croucher) {
+    if (standing.impactAnimation === "trip" && !standing.grounded) return;
+    if (standing.impactTimer > 0) return;
+    if (react && standing.grounded) {
+      launchPlayer(
+        standing,
+        standing.facing,
+        COLLISION_JUMP,
+        "trip",
+        TRIP_SPEED
+      );
+      return;
+    }
+
+    separateFromCrouchedPlayer(standing, croucher);
+    return;
+  }
+
+  if (!react) {
+    separatePlayers(first, second, direction, overlapX);
     return;
   }
 
@@ -393,6 +419,31 @@ function resolveAttacks(players) {
     opponent.stun = 0.2;
     player.attackHit = true;
   }
+}
+
+function getTransparentEffectSprite() {
+  if (!effectSprite.complete || effectSprite.naturalWidth === 0) return null;
+  if (transparentEffectSprite) return transparentEffectSprite;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = effectSprite.naturalWidth;
+  canvas.height = effectSprite.naturalHeight;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Could not prepare the marshmallow splash sprite.");
+
+  context.drawImage(effectSprite, 0, 0);
+  const image = context.getImageData(0, 0, canvas.width, canvas.height);
+  // The DS palette's transparent black is flattened to near-black in the GIF.
+  for (let index = 0; index < image.data.length; index += 4) {
+    if (image.data[index] <= 1 &&
+        image.data[index + 1] <= 1 &&
+        image.data[index + 2] <= 1) {
+      image.data[index + 3] = 0;
+    }
+  }
+  context.putImageData(image, 0, 0);
+  transparentEffectSprite = canvas;
+  return transparentEffectSprite;
 }
 
 function getAttackBounds(player) {
@@ -526,36 +577,26 @@ function drawPlayer(context, player, elapsed) {
 }
 
 function drawPitSplash(context, splash) {
-  const progress = splash.age / PIT_SPLASH_DURATION;
-  const spread = 8 + progress * 26;
-  const rise = Math.sin(progress * Math.PI) * 18;
-  const opacity = Math.sin(progress * Math.PI);
-  const droplets = [
-    { x: -1, y: -1, size: 5 },
-    { x: -0.68, y: -0.72, size: 3 },
-    { x: -0.35, y: -1.15, size: 4 },
-    { x: 0.38, y: -1.12, size: 4 },
-    { x: 0.7, y: -0.7, size: 3 },
-    { x: 1, y: -0.95, size: 5 }
-  ];
+  const sprite = getTransparentEffectSprite();
+  if (!sprite) return;
 
-  context.save();
-  context.globalAlpha = opacity;
-  context.fillStyle = "#fff4e5";
-  context.beginPath();
-  context.ellipse(splash.x, PIT_SURFACE_Y + 2, 12 + progress * 16, 4, 0, 0, Math.PI * 2);
-  context.fill();
-
-  for (const droplet of droplets) {
-    const x = splash.x + droplet.x * spread;
-    const y = PIT_SURFACE_Y - 2 + droplet.y * rise;
-    const size = droplet.size * (1 - progress * 0.45);
-    context.fillStyle = droplet.size > 4 ? "#fff8ed" : "#f5d7e8";
-    context.beginPath();
-    context.ellipse(x, y, size, size * 0.72, droplet.x * 0.4, 0, Math.PI * 2);
-    context.fill();
-  }
-  context.restore();
+  const frameIndex = Math.min(
+    PIT_SPLASH_FRAMES.length - 1,
+    Math.floor((splash.age / PIT_SPLASH_DURATION) * PIT_SPLASH_FRAMES.length)
+  );
+  const sourceY = PIT_SPLASH_FRAMES[frameIndex] * 32;
+  const splashY = PIT_SURFACE_Y + PIT_SPLASH_Y_OFFSET;
+  context.drawImage(
+    sprite,
+    0,
+    sourceY,
+    32,
+    32,
+    splash.x - 16,
+    splashY - 16,
+    32,
+    32
+  );
 }
 
 export function drawGame(context, game, pixelRatio = 1) {
