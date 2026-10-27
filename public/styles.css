@@ -200,6 +200,38 @@ footer {
   background: #171a24;
 }
 
+.match-invite {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 1.25fr);
+  align-items: center;
+  gap: 0.25rem 1rem;
+  margin: 0 0 1rem;
+  border-color: #697b50;
+  background: #20271e;
+}
+
+.match-invite .eyebrow {
+  margin-bottom: 0.35rem;
+}
+
+.match-invite .invite-code {
+  margin: 0;
+  font-size: clamp(1.7rem, 5vw, 2.2rem);
+}
+
+.match-invite-actions {
+  display: flex;
+  gap: 0.65rem;
+}
+
+.match-invite-actions input {
+  flex: 1;
+}
+
+.match-invite .hint {
+  grid-column: 1 / -1;
+}
+
 .invite-code {
   margin-bottom: 0.75rem;
   color: #fff;
@@ -358,6 +390,18 @@ footer {
   .game-heading {
     flex-direction: row;
     align-items: center;
+  }
+
+  .match-invite {
+    grid-template-columns: 1fr;
+  }
+
+  .match-invite .hint {
+    grid-column: auto;
+  }
+
+  .match-invite-actions {
+    flex-direction: column;
   }
 
   .control-guide {

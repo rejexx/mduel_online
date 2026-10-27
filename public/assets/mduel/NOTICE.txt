@@ -10,3 +10,8 @@ LICENSE file.
 The files are redistributed without modification. The source project credits
 the original Mduel game to Duncan Gill and identifies pwmckenna/mduel as a
 derivative. This notice does not claim ownership of the included artwork.
+
+The original effects sprite sheet, effectSprites.gif, is from
+https://github.com/pospi/mduel-ds/tree/master/code/data and is distributed under
+the GNU General Public License version 2 or later. The marshmallow splash uses
+its original frames 4-7 without modification.

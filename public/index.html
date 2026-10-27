@@ -29,7 +29,7 @@
 
         <div class="lobby-actions">
           <button id="local-game" type="button">Play on this device</button>
-          <button id="create-room" class="button-secondary" type="button">Create online room</button>
+          <button id="create-room" class="button-secondary" type="button">Host an online game</button>
         </div>
 
         <form id="join-form" class="join-form">
@@ -40,19 +40,8 @@
               aria-describedby="join-help">
             <button id="join-room" class="button-secondary" type="submit">Join</button>
           </div>
-          <p id="join-help" class="hint">Ask your friend for their 6-character invite code.</p>
+          <p id="join-help" class="hint">Enter your friend's 6-character code, or open their invite link to join automatically.</p>
         </form>
-
-        <section id="invite-panel" class="invite-panel" hidden aria-live="polite">
-          <p class="eyebrow">INVITE A FRIEND</p>
-          <p class="invite-code" id="invite-code"></p>
-          <label class="sr-only" for="invite-link">Invite link</label>
-          <div class="join-row">
-            <input id="invite-link" type="url" readonly>
-            <button id="copy-invite" class="button-secondary" type="button">Copy link</button>
-          </div>
-          <p id="invite-status" class="hint">Waiting for your friend to join…</p>
-        </section>
 
         <p class="notice">
           Online rooms use PeerJS's public signaling service to connect players.
@@ -69,6 +58,19 @@
           <button id="leave-game" class="button-tertiary" type="button">Leave match</button>
         </div>
 
+        <section id="invite-panel" class="invite-panel match-invite" hidden aria-live="polite">
+          <div>
+            <p class="eyebrow">SHARE THIS CODE WITH YOUR FRIEND</p>
+            <p class="invite-code" id="invite-code"></p>
+          </div>
+          <div class="match-invite-actions">
+            <label class="sr-only" for="invite-link">Invite link</label>
+            <input id="invite-link" type="url" readonly>
+            <button id="copy-invite" class="button-secondary" type="button">Copy invite link</button>
+          </div>
+          <p class="hint" id="invite-status">Waiting for your friend to join…</p>
+        </section>
+
         <canvas id="game-canvas" width="1280" height="800"
           aria-label="Mduel arena. Jump between platforms and knock your opponent into the pit."></canvas>
 
@@ -79,9 +81,13 @@
 
         <div class="control-guide">
           <p><span class="player-label blue">P1</span> <kbd>←</kbd><kbd>→</kbd> move
-            <kbd>↑</kbd> jump/climb <kbd>Enter</kbd> duel</p>
+            <kbd>↑</kbd> jump/climb <kbd>↓</kbd> crouch/climb down; press while moving to roll
+            <kbd>Enter</kbd> duel / fire</p>
           <p><span class="player-label orange">P2</span> <kbd>A</kbd><kbd>D</kbd> move
-            <kbd>W</kbd> jump/climb <kbd>Q</kbd> duel</p>
+            <kbd>W</kbd> jump/climb <kbd>S</kbd> crouch/climb down; press while moving to roll
+            <kbd>Q</kbd> duel / fire</p>
+          <p>Pick up boots, then press duel/fire on the ground for a boosted jump. Shields block attacks from the direction you're facing.</p>
+          <p>On a rope, release up/down to hold position; press left/right to jump off.</p>
         </div>
         <div class="touch-controls" aria-label="Touch controls">
           <div class="touch-player" data-touch-player="1">
@@ -89,16 +95,16 @@
             <button type="button" data-player="1" data-key="left" aria-label="Player 1 move left">◀</button>
             <button type="button" data-player="1" data-key="right" aria-label="Player 1 move right">▶</button>
             <button type="button" data-player="1" data-key="up" aria-label="Player 1 jump or climb up">Up</button>
-            <button type="button" data-player="1" data-key="down" aria-label="Player 1 climb down">Down</button>
-            <button type="button" data-player="1" data-key="attack" aria-label="Player 1 duel">Duel</button>
+            <button type="button" data-player="1" data-key="down" aria-label="Player 1 crouch, climb down, or roll while moving">Down</button>
+            <button type="button" data-player="1" data-key="attack" aria-label="Player 1 duel or fire power-up">Duel</button>
           </div>
           <div class="touch-player" data-touch-player="2">
             <span class="player-label orange">P2</span>
             <button type="button" data-player="2" data-key="left" aria-label="Player 2 move left">◀</button>
             <button type="button" data-player="2" data-key="right" aria-label="Player 2 move right">▶</button>
             <button type="button" data-player="2" data-key="up" aria-label="Player 2 jump or climb up">Up</button>
-            <button type="button" data-player="2" data-key="down" aria-label="Player 2 climb down">Down</button>
-            <button type="button" data-player="2" data-key="attack" aria-label="Player 2 duel">Duel</button>
+            <button type="button" data-player="2" data-key="down" aria-label="Player 2 crouch, climb down, or roll while moving">Down</button>
+            <button type="button" data-player="2" data-key="attack" aria-label="Player 2 duel or fire power-up">Duel</button>
           </div>
         </div>
       </section>
