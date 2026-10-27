@@ -27,8 +27,10 @@ Open <http://localhost:8080>.
 - On touch devices, use the on-screen buttons.
 - First player to knock the other player into the pit three times wins.
 
-Choose **Play on this device** for local multiplayer. To play online, create a
-room and share its link or six-character code with a friend.
+Choose **Play on this device** for local multiplayer. To play online, host a
+game and share the code shown above the arena (or copy the invite link). The
+host waits in the arena until a friend joins; opening an invite link connects
+the guest automatically.
 
 ## Online play
 

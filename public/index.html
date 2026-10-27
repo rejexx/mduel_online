@@ -29,7 +29,7 @@
 
         <div class="lobby-actions">
           <button id="local-game" type="button">Play on this device</button>
-          <button id="create-room" class="button-secondary" type="button">Create online room</button>
+          <button id="create-room" class="button-secondary" type="button">Host an online game</button>
         </div>
 
         <form id="join-form" class="join-form">
@@ -40,19 +40,8 @@
               aria-describedby="join-help">
             <button id="join-room" class="button-secondary" type="submit">Join</button>
           </div>
-          <p id="join-help" class="hint">Ask your friend for their 6-character invite code.</p>
+          <p id="join-help" class="hint">Enter your friend's 6-character code, or open their invite link to join automatically.</p>
         </form>
-
-        <section id="invite-panel" class="invite-panel" hidden aria-live="polite">
-          <p class="eyebrow">INVITE A FRIEND</p>
-          <p class="invite-code" id="invite-code"></p>
-          <label class="sr-only" for="invite-link">Invite link</label>
-          <div class="join-row">
-            <input id="invite-link" type="url" readonly>
-            <button id="copy-invite" class="button-secondary" type="button">Copy link</button>
-          </div>
-          <p id="invite-status" class="hint">Waiting for your friend to join…</p>
-        </section>
 
         <p class="notice">
           Online rooms use PeerJS's public signaling service to connect players.
@@ -68,6 +57,19 @@
           </div>
           <button id="leave-game" class="button-tertiary" type="button">Leave match</button>
         </div>
+
+        <section id="invite-panel" class="invite-panel match-invite" hidden aria-live="polite">
+          <div>
+            <p class="eyebrow">SHARE THIS CODE WITH YOUR FRIEND</p>
+            <p class="invite-code" id="invite-code"></p>
+          </div>
+          <div class="match-invite-actions">
+            <label class="sr-only" for="invite-link">Invite link</label>
+            <input id="invite-link" type="url" readonly>
+            <button id="copy-invite" class="button-secondary" type="button">Copy invite link</button>
+          </div>
+          <p class="hint" id="invite-status">Waiting for your friend to join…</p>
+        </section>
 
         <canvas id="game-canvas" width="1280" height="800"
           aria-label="Mduel arena. Jump between platforms and knock your opponent into the pit."></canvas>

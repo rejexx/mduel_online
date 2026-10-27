@@ -66,6 +66,7 @@ let lastFrame = 0;
 let lastSync = 0;
 let lastSentInput = "";
 let connectTimeout = 0;
+let onlineConnected = false;
 
 function setLobbyStatus(message, isError = false) {
   elements.networkStatus.textContent = message;
@@ -171,7 +172,7 @@ function animationLoop(timestamp) {
   const delta = lastFrame === 0 ? 0 : Math.min((timestamp - lastFrame) / 1000, 0.04);
   lastFrame = timestamp;
 
-  if (mode === "local" || (mode === "online" && role === "host")) {
+  if (mode === "local" || (mode === "online" && role === "host" && onlineConnected)) {
     const inputs = [
       currentInput(1),
       mode === "local" ? currentInput(2) : normalizeInput(peerInputs)
@@ -179,7 +180,7 @@ function animationLoop(timestamp) {
     stepGame(game, inputs, delta);
     clearPressed();
 
-    if (mode === "online" && timestamp - lastSync > 50) {
+    if (mode === "online" && onlineConnected && timestamp - lastSync > 50) {
       sendGameState();
       lastSync = timestamp;
     }
@@ -191,9 +192,10 @@ function animationLoop(timestamp) {
   animationFrame = window.requestAnimationFrame(animationLoop);
 }
 
-function beginMatch(matchMode, matchRole = null) {
+function beginMatch(matchMode, matchRole = null, waiting = false) {
   mode = matchMode;
   role = matchRole;
+  onlineConnected = matchMode === "local" || (matchMode === "online" && !waiting);
   game = createGame();
   lastFrame = 0;
   lastSync = 0;
@@ -214,7 +216,9 @@ function beginMatch(matchMode, matchRole = null) {
   }
   setMatchStatus(matchMode === "local"
     ? "First to three falls wins"
-    : "Connected · first to three falls wins");
+    : waiting
+      ? matchRole === "host" ? "Waiting for the other player to join…" : "Connecting to host…"
+      : "Connected · first to three falls wins");
   showGame();
   cancelAnimationFrame(animationFrame);
   animationFrame = window.requestAnimationFrame(animationLoop);
@@ -280,27 +284,39 @@ function onConnectionOpen(nextConnection) {
     if (connection !== nextConnection) return;
     const wasHost = role === "host";
     connection = null;
+    onlineConnected = false;
+    peerInputs.held = {};
+    peerInputs.pressed = {};
+    if (wasHost) {
+      elements.invitePanel.hidden = false;
+      elements.inviteStatus.textContent = "Friend disconnected. Waiting for the other player to rejoin…";
+      setMatchStatus("Waiting for the other player to rejoin…");
+      return;
+    }
+
     mode = "lobby";
-    role = wasHost ? "host" : null;
+    role = null;
     cancelAnimationFrame(animationFrame);
     showLobby();
-    elements.invitePanel.hidden = !wasHost;
-    elements.createRoom.disabled = wasHost;
+    elements.invitePanel.hidden = true;
+    elements.createRoom.disabled = false;
     elements.localGame.disabled = false;
     elements.joinRoom.disabled = false;
-    if (!wasHost && peer) {
+    if (peer) {
       peer.destroy();
       peer = null;
     }
-    elements.inviteStatus.textContent = "Friend disconnected. Share the code again to retry.";
-    setLobbyStatus(wasHost ? "Friend disconnected · room is still open" : "Friend disconnected");
+    setLobbyStatus("Friend disconnected");
   });
   connection.on("error", (error) => {
     setMatchStatus(`Connection error: ${error.message}`);
   });
 
-  elements.invitePanel.hidden = true;
-  setLobbyStatus("Friend connected");
+  onlineConnected = true;
+  elements.invitePanel.hidden = role !== "host";
+  if (role === "host") {
+    elements.inviteStatus.textContent = "Friend connected. The game has started.";
+  }
   beginMatch("online", role);
   if (role === "host") sendGameState();
 }
@@ -322,7 +338,9 @@ function failOnline(message) {
   closePeer();
   mode = "lobby";
   role = null;
+  onlineConnected = false;
   showLobby();
+  elements.invitePanel.hidden = true;
   elements.createRoom.disabled = false;
   elements.localGame.disabled = false;
   elements.joinRoom.disabled = false;
@@ -337,9 +355,12 @@ function createOnlineRoom() {
 
   const code = createRoomCode();
   role = "host";
+  elements.invitePanel.hidden = true;
+  elements.copyInvite.textContent = "Copy invite link";
   setLobbyStatus("Creating room…");
   elements.createRoom.disabled = true;
   elements.localGame.disabled = true;
+  elements.joinRoom.disabled = true;
 
   peer = new window.Peer(roomPeerId(code), { secure: true });
   peer.on("open", () => {
@@ -349,13 +370,15 @@ function createOnlineRoom() {
     invite.searchParams.set("room", code);
     elements.inviteLink.value = invite.href;
     elements.inviteStatus.textContent = "Waiting for your friend to join…";
-    setLobbyStatus("Room ready");
+    elements.createRoom.disabled = true;
+    beginMatch("online", "host", true);
   });
   peer.on("connection", (incoming) => {
     if (connection) {
       incoming.close();
       return;
     }
+    connection = incoming;
     incoming.on("open", () => onConnectionOpen(incoming));
   });
   peer.on("error", (error) => {
@@ -372,10 +395,12 @@ function joinOnlineRoom(code) {
   }
 
   role = "guest";
+  elements.invitePanel.hidden = true;
   setLobbyStatus("Connecting to room…");
   elements.joinRoom.disabled = true;
   elements.createRoom.disabled = true;
   elements.localGame.disabled = true;
+  beginMatch("online", "guest", true);
 
   peer = new window.Peer({ secure: true });
   peer.on("open", () => {
@@ -400,6 +425,7 @@ function leaveMatch() {
   closePeer();
   mode = "lobby";
   role = null;
+  onlineConnected = false;
   showLobby();
   elements.invitePanel.hidden = true;
   elements.createRoom.disabled = false;
@@ -504,8 +530,7 @@ elements.rematch.addEventListener("click", () => {
 
 const roomFromLink = new URL(window.location.href).searchParams.get("room");
 if (roomFromLink && /^[A-HJ-NP-Z2-9]{6}$/i.test(roomFromLink)) {
-  elements.roomCode.value = roomFromLink.toUpperCase();
-  setLobbyStatus("Invite link ready · select Join");
+  joinOnlineRoom(roomFromLink.toUpperCase());
 }
 
 drawGame(context, game, elements.canvas.width / WORLD.width);
