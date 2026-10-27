@@ -12,6 +12,12 @@ const GRAVITY = 900;
 const RUN_SPEED = 108;
 const JUMP_SPEED = 300;
 const MAX_FALL_SPEED = 360;
+const JUMP_STANDING_FRAMES = [6, 12, 13, 14, 15, 16, 17, 21];
+const JUMP_MOVING_FRAMES = [17, 18, 19, 20, 20, 21];
+const JUMP_STANDING_FRAME_DURATION = 1 / 12;
+const JUMP_MOVING_FRAME_DURATION = 1 / 6;
+const CLIMB_UP_FRAMES = [39, 40, 41, 42];
+const CLIMB_DOWN_FRAMES = [41, 40, 39, 42];
 const CROUCH_FRAME = 5;
 const ROLL_FRAMES = [7, 8, 9, 10, 5];
 const ROLL_DURATION = 0.4;
@@ -104,6 +110,11 @@ function createPlayer(id, x, color, facing) {
     attackTimer: 0,
     attackHit: false,
     climbing: false,
+    climbAnimationDirection: 0,
+    climbAnimationTime: 0,
+    climbingFrame: CLIMB_UP_FRAMES[0],
+    jumpAnimation: null,
+    jumpAnimationTime: 0,
     crouching: false
   };
 }
@@ -161,6 +172,8 @@ function updatePlayer(player, input, delta) {
     player.pitTimer += delta;
     player.y += player.vy * delta;
     player.vx = 0;
+    player.climbAnimationDirection = 0;
+    player.jumpAnimation = null;
     player.grounded = false;
     player.crouching = false;
     player.rolling = false;
@@ -173,6 +186,7 @@ function updatePlayer(player, input, delta) {
   player.stun = Math.max(0, player.stun - delta);
   player.impactTimer = Math.max(0, player.impactTimer - delta);
   player.rollTimer = Math.max(0, player.rollTimer - delta);
+  if (player.jumpAnimation) player.jumpAnimationTime += delta;
   if (player.rollTimer === 0) player.rolling = false;
 
   const rope = ROPES.find((item) =>
@@ -180,11 +194,26 @@ function updatePlayer(player, input, delta) {
     player.y < item.bottom &&
     player.y + PLAYER_HEIGHT > item.top
   );
-  player.climbing = Boolean(rope &&
-    ((input.up && player.y > rope.top) ||
-      (input.down && player.y + PLAYER_HEIGHT < rope.bottom)));
-  const wantsCrouch = !player.climbing && player.grounded && input.down === true;
   const direction = Number(input.right === true) - Number(input.left === true);
+  if (player.climbing && !rope) player.climbing = false;
+  if (player.climbing && rope && direction !== 0) {
+    player.climbing = false;
+    player.climbAnimationDirection = 0;
+    player.vx = direction * RUN_SPEED;
+    player.vy = 0;
+    player.facing = direction;
+  } else if (!player.climbing && !stunned && !impacted && rope &&
+      direction === 0 && (input.up === true || input.down === true) &&
+      !player.crouching && !player.rolling) {
+    player.climbing = true;
+    player.x = rope.x - PLAYER_WIDTH / 2;
+    player.climbAnimationDirection = input.down === true ? 1 : -1;
+    player.climbAnimationTime = 0;
+    player.climbingFrame = input.down === true
+      ? CLIMB_DOWN_FRAMES[0]
+      : CLIMB_UP_FRAMES[0];
+  }
+  const wantsCrouch = !player.climbing && player.grounded && input.down === true;
   if (!stunned && !impacted && player.grounded && !player.climbing &&
       input.roll === true && direction !== 0) {
     player.rolling = true;
@@ -208,6 +237,8 @@ function updatePlayer(player, input, delta) {
     if (input.jump && player.grounded && !player.crouching && !player.rolling && !player.climbing) {
       player.vy = -JUMP_SPEED;
       player.grounded = false;
+      player.jumpAnimation = player.vx === 0 ? "standing" : "moving";
+      player.jumpAnimationTime = 0;
     }
 
     if (input.attack && player.attackCooldown <= 0 && !player.rolling) {
@@ -224,7 +255,24 @@ function updatePlayer(player, input, delta) {
 
   if (player.climbing) {
     player.vx = 0;
-    player.vy = (Number(input.down === true) - Number(input.up === true)) * 155;
+    const climbVelocity =
+      (Number(input.down === true) - Number(input.up === true)) * 155;
+    const atRopeLimit = rope && (
+      (player.y <= rope.top && climbVelocity < 0) ||
+      (player.y >= rope.bottom - PLAYER_HEIGHT && climbVelocity > 0)
+    );
+    player.vy = atRopeLimit ? 0 : climbVelocity;
+    if (player.vy !== 0) {
+      const climbDirection = Math.sign(player.vy);
+      if (player.climbAnimationDirection !== climbDirection) {
+        player.climbAnimationDirection = climbDirection;
+        player.climbAnimationTime = 0;
+      }
+      player.climbAnimationTime += delta;
+      const frames = climbDirection > 0 ? CLIMB_DOWN_FRAMES : CLIMB_UP_FRAMES;
+      const frameIndex = Math.floor(player.climbAnimationTime * 8) % frames.length;
+      player.climbingFrame = frames[frameIndex];
+    }
   } else {
     player.vy = Math.min(MAX_FALL_SPEED, player.vy + GRAVITY * delta);
   }
@@ -253,6 +301,7 @@ function updatePlayer(player, input, delta) {
       player.vy = 0;
       player.grounded = true;
       player.crouching = Boolean(!stunned && !player.rolling && input.down === true);
+      player.jumpAnimation = null;
     }
   }
   if (!player.grounded) player.crouching = false;
@@ -262,7 +311,12 @@ function updatePlayer(player, input, delta) {
   if (player.climbing) {
     const activeRope = ROPES.find((item) => Math.abs(player.x + PLAYER_WIDTH / 2 - item.x) < 9);
     if (activeRope) {
-      player.y = Math.max(activeRope.top, Math.min(activeRope.bottom - PLAYER_HEIGHT, player.y));
+      const clampedY = Math.max(
+        activeRope.top,
+        Math.min(activeRope.bottom - PLAYER_HEIGHT, player.y)
+      );
+      if (clampedY !== player.y) player.vy = 0;
+      player.y = clampedY;
     }
   }
 
@@ -340,6 +394,8 @@ function separateFromCrouchedPlayer(standing, crouched) {
 function launchPlayer(player, direction, verticalSpeed, animation, horizontalSpeed = COLLISION_RECOIL) {
   player.vx = direction * horizontalSpeed;
   player.vy = verticalSpeed;
+  player.climbAnimationDirection = 0;
+  player.jumpAnimation = null;
   player.grounded = false;
   player.crouching = false;
   player.rolling = false;
@@ -487,6 +543,7 @@ export function stepGame(game, inputs, deltaSeconds) {
     player.stun = 0;
     player.impactTimer = 0;
     player.impactAnimation = null;
+    player.jumpAnimation = null;
     player.inPit = false;
     player.pitTimer = 0;
     player.rolling = false;
@@ -503,6 +560,7 @@ export function stepGame(game, inputs, deltaSeconds) {
       player.vx = 0;
       player.rolling = false;
       player.crouching = false;
+      player.jumpAnimation = null;
       game.pitSplashes.push({
         x: player.x + PLAYER_WIDTH / 2,
         age: 0
@@ -531,7 +589,7 @@ function drawPlayer(context, player, elapsed) {
   if (player.inPit) {
     frame = 21;
   } else if (player.climbing) {
-    frame = 39 + Math.floor(elapsed * 8) % 5;
+    frame = player.climbingFrame;
   } else if (player.impactAnimation === "trip" && !player.grounded) {
     frame = TRIP_FRAMES[Math.floor(elapsed * 12) % TRIP_FRAMES.length];
   } else if (player.impactTimer > 0) {
@@ -549,6 +607,18 @@ function drawPlayer(context, player, elapsed) {
       Math.floor(((ROLL_DURATION - player.rollTimer) / ROLL_DURATION) * ROLL_FRAMES.length)
     );
     frame = ROLL_FRAMES[frameIndex];
+  } else if (player.jumpAnimation) {
+    const frames = player.jumpAnimation === "standing"
+      ? JUMP_STANDING_FRAMES
+      : JUMP_MOVING_FRAMES;
+    const frameDuration = player.jumpAnimation === "standing"
+      ? JUMP_STANDING_FRAME_DURATION
+      : JUMP_MOVING_FRAME_DURATION;
+    const frameIndex = Math.min(
+      frames.length - 1,
+      Math.floor(player.jumpAnimationTime / frameDuration)
+    );
+    frame = frames[frameIndex];
   } else if (player.vy < -35) {
     frame = 11 + Math.floor(elapsed * 9) % 7;
   } else if (player.vy > 90) {
