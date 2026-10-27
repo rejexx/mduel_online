@@ -45,6 +45,55 @@ availability guarantee. Online play requires access to PeerJS's hosted
 signaling service and networks that permit a WebRTC connection. If it is
 unavailable, use local play.
 
+## Power-up roster and rulesets
+
+The classic roster below is taken from the pickup list in
+[pwmckenna/mduel](https://github.com/pwmckenna/mduel/blob/master/app/scripts/mduel/pickups.js).
+The DS roster is from the pickup enum and collection handling in
+[pospi/mduel-ds](https://github.com/pospi/mduel-ds/blob/master/code/source/pickup.h)
+and [`pickup.cpp`](https://github.com/pospi/mduel-ds/blob/master/code/source/pickup.cpp).
+“DS addition” means it is present in the DS roster but not in that classic
+JavaScript roster; it does not claim to establish when the power-up first
+appeared in every version of Mduel.
+
+| Power-up | Roster | What it does in the reference game | Browser remake |
+| --- | --- | --- | --- |
+| Skull | Classic and DS | Immediately kills the player who collects it. | Not implemented |
+| Lightning / 1000V | Classic and DS | Electrifies its holder; player contact can kill the unprotected opponent. | Not implemented |
+| Invisibility | Classic and DS | Temporarily makes its holder invisible. | Not implemented |
+| Mine | Classic and DS | Lets its holder place a mine as a trap. | Not implemented |
+| Gun | Classic and DS | Fires a limited-use attack; the DS version has five shots. | Implemented as a five-shot projectile with knockback; hit behavior is simplified from the reference. |
+| Explode / TNT | Classic and DS | Explodes floor/platform tiles; TNT remains an active pickup that collides with tiles. | Not implemented |
+| Boots | DS addition | Gives the holder a stronger jump when activated. | Implemented; persistent, activated with duel/fire while grounded. |
+| Grenade | DS addition | Throws an explosive projectile. | Not implemented |
+| Puck | DS addition | Throws a puck projectile. | Not implemented |
+| Chute (parachute) | DS addition | Slows falling while activated in the air. | Not implemented |
+| Hook | DS addition | Grabs a nearby rope or floor edge to recover/climb. | Not implemented |
+| Warp | DS addition | Teleports its holder when activated. | Not implemented |
+| Magnet | DS addition | Pulls pickups toward its holder and can pull the opponent's weapon away from the front. | Not implemented |
+| Net | DS addition | Throws a net projectile. | Not implemented |
+| Shield | DS addition | Protects against attacks from the shielded side. | Implemented as a persistent, directional block. |
+| Dunce | DS addition | Adds a dunce-hat visual to the holder. | Not implemented |
+| Weasel | DS addition | Fires a weasel projectile. | Not implemented |
+| Boomerang | DS addition | Throws a boomerang projectile that returns to its holder. | Not implemented |
+
+### Planned start-of-match ruleset selector
+
+Add **Classic** and **DS** choices before local play or room creation. The
+selected ruleset should define the legal pickup roster and any rules that differ
+between versions. The host's choice is authoritative for online matches: include
+the ruleset in the room handshake and initial game state, have the guest display
+it as read-only, and validate received pickups against that ruleset. Local
+matches use the selected choice directly.
+
+Do not spawn a pickup just because its sprite or roster entry exists. Until its
+mechanics are ported and tested, keep it out of that mode's active spawn pool;
+show the mode as partial during development rather than silently substituting
+another effect. The selector can default to the current DS-style MVP roster
+(gun, boots, shield) until each mode's intended items are playable. Expand each
+roster as its missing mechanics are implemented, then test both modes locally
+and across host/guest connections.
+
 ## Build and deploy
 
 Netlify publishes the static `public/` directory directly; there is no build
