@@ -36,6 +36,7 @@ if (!context) {
 const GAME_ID_PREFIX = "mduel";
 const ROOM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const INPUT_KEYS = ["left", "right", "up", "down", "attack"];
+const VALID_POWERUPS = [null, "gun", "boots", "shield"];
 const controls = {
   1: {
     left: "ArrowLeft",
@@ -235,11 +236,32 @@ function validGameSnapshot(snapshot) {
       Number.isFinite(player.vx) &&
       Number.isFinite(player.vy) &&
       Number.isInteger(player.stocks) &&
+      VALID_POWERUPS.includes(player.powerup) &&
+      Number.isInteger(player.weaponAmmo) &&
+      player.weaponAmmo >= 0 &&
+      player.weaponAmmo <= 5 &&
       (player.facing === 1 || player.facing === -1)
     ) &&
     Array.isArray(snapshot.scores) &&
     snapshot.scores.length === 2 &&
     snapshot.scores.every(Number.isInteger) &&
+    Array.isArray(snapshot.pickups) &&
+    snapshot.pickups.every((pickup) =>
+      ["gun", "boots", "shield"].includes(pickup.type) &&
+      Number.isFinite(pickup.x) &&
+      Number.isFinite(pickup.y) &&
+      Number.isFinite(pickup.vx) &&
+      Number.isFinite(pickup.vy) &&
+      Number.isFinite(pickup.life)
+    ) &&
+    Array.isArray(snapshot.projectiles) &&
+    snapshot.projectiles.every((projectile) =>
+      Number.isFinite(projectile.x) &&
+      Number.isFinite(projectile.y) &&
+      Number.isFinite(projectile.vx) &&
+      Number.isFinite(projectile.life) &&
+      (projectile.owner === 1 || projectile.owner === 2)
+    ) &&
     (snapshot.winner === null || snapshot.winner === 1 || snapshot.winner === 2);
 }
 

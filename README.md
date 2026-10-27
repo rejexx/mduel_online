@@ -20,10 +20,11 @@ Open <http://localhost:8080>.
 
 ### Controls
 
-- **Player 1:** Left/right arrows move, up jumps/climbs, down crouches/climbs down; press down while moving to roll. Enter duels.
-- **Player 2:** A/D move, W jumps/climbs, S crouches/climbs down; press S while moving to roll. Q duels.
+- **Player 1:** Left/right arrows move, up jumps/climbs, down crouches/climbs down; press down while moving to roll. Press Enter to duel or fire a pickup.
+- **Player 2:** A/D move, W jumps/climbs, S crouches/climbs down; press S while moving to roll. Press Q to duel or fire a pickup.
 - Jump direction is set at takeoff; you cannot steer during a jump or collision fall.
 - On a rope, release up/down to hold position; press left/right to jump off.
+- Pick up boots for one boosted jump, a shield to block one hit, or a five-shot gun. Pickups appear during play.
 - On touch devices, use the on-screen buttons.
 - First player to knock the other player into the pit three times wins.
 
@@ -55,9 +56,10 @@ before merging.
 
 - The arena and combat loop are still simplified. Movement, player/platform
   collisions, crouching, rolling, player bump reactions, and pit sinking now
-  have a second physics pass, but still need playtesting and tuning against the
-  DS reference. Pickups, sound, and other modes are not implemented. Legacy
-  character, platform, rope, power-up, pit, and pickup sprite sheets are included.
+  have another tuning pass, but still need playtesting against the DS reference.
+  Boots, shields, and a five-shot gun are implemented as a starter pickup set;
+  the rest of the original power-ups, sound, and other modes are not implemented.
+  Legacy character, platform, rope, power-up, pit, and pickup sprite sheets are included.
 - Online match setup and synchronization are an initial prototype; there is no
   matchmaking, account system, room persistence, TURN fallback, or hosted
   signaling SLA.

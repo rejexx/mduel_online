@@ -32,6 +32,16 @@ const COLLISION_RECOIL = 220;
 const COLLISION_JUMP = -200;
 const TRIP_SPEED = 220;
 const COLLISION_DURATION = 0.28;
+const PICKUP_TYPES = [
+  { id: "gun", frame: 7, label: "GUN" },
+  { id: "boots", frame: 9, label: "BOOTS" },
+  { id: "shield", frame: 17, label: "SHIELD" }
+];
+const PICKUP_SPAWN_INTERVAL = 8;
+const PICKUP_LIFETIME = 18;
+const PICKUP_MAX_ACTIVE = 2;
+const PROJECTILE_SPEED = 420;
+const PROJECTILE_LIFETIME = 1.4;
 const PLATFORMS = [
   ...[2, 3, 4, 5, 12, 13, 14, 15].map((column) => ({
     x: column * 32 + 32,
@@ -78,6 +88,8 @@ const spawnPlatformSprite = new Image();
 spawnPlatformSprite.src = "/assets/mduel/spawn_platform.png";
 const powerupSprite = new Image();
 powerupSprite.src = "/assets/mduel/powerup_spawn.png";
+const pickupSprite = new Image();
+pickupSprite.src = "/assets/mduel/pickupSprites.png";
 const ropeAnchorSprite = new Image();
 ropeAnchorSprite.src = "/assets/mduel/rope_anchor.png";
 const pitSprite = new Image();
@@ -109,6 +121,8 @@ function createPlayer(id, x, color, facing) {
     attackCooldown: 0,
     attackTimer: 0,
     attackHit: false,
+    powerup: null,
+    weaponAmmo: 0,
     climbing: false,
     climbAnimationDirection: 0,
     climbAnimationTime: 0,
@@ -129,6 +143,10 @@ export function createGame() {
     winner: null,
     elapsed: 0,
     playersTouching: false,
+    pickups: [],
+    projectiles: [],
+    pickupSpawnTimer: 3,
+    pickupSpawnIndex: 0,
     pitSplashes: []
   };
 }
@@ -167,7 +185,7 @@ function playerFeet(player) {
   };
 }
 
-function updatePlayer(player, input, delta) {
+function updatePlayer(player, input, delta, game) {
   if (player.inPit) {
     player.pitTimer += delta;
     player.y += player.vy * delta;
@@ -235,16 +253,31 @@ function updatePlayer(player, input, delta) {
     }
 
     if (input.jump && player.grounded && !player.crouching && !player.rolling && !player.climbing) {
-      player.vy = -JUMP_SPEED;
+      const jumpSpeed = player.powerup === "boots" ? JUMP_SPEED * 1.5 : JUMP_SPEED;
+      player.vy = -jumpSpeed;
       player.grounded = false;
       player.jumpAnimation = player.vx === 0 ? "standing" : "moving";
       player.jumpAnimationTime = 0;
+      if (player.powerup === "boots") player.powerup = null;
     }
 
     if (input.attack && player.attackCooldown <= 0 && !player.rolling) {
       player.attackCooldown = 0.48;
-      player.attackTimer = 0.18;
-      player.attackHit = false;
+      if (player.powerup === "gun" && player.weaponAmmo > 0 &&
+          player.grounded && !player.crouching) {
+        game.projectiles.push({
+          x: player.x + (player.facing > 0 ? PLAYER_WIDTH : 0),
+          y: player.y + 46,
+          vx: player.facing * PROJECTILE_SPEED,
+          owner: player.id,
+          life: PROJECTILE_LIFETIME
+        });
+        player.weaponAmmo -= 1;
+        if (player.weaponAmmo === 0) player.powerup = null;
+      } else if (player.powerup !== "gun") {
+        player.attackTimer = 0.18;
+        player.attackHit = false;
+      }
     }
   } else if (player.crouching) {
     player.vx = 0;
@@ -427,6 +460,11 @@ function resolvePlayerCollision(first, second, react) {
   const standing = croucher === first ? second : first;
 
   if (croucher) {
+    if (standing.powerup === "shield" && react) {
+      standing.powerup = null;
+      separateFromCrouchedPlayer(standing, croucher);
+      return;
+    }
     if (standing.impactAnimation === "trip" && !standing.grounded) return;
     if (standing.impactTimer > 0) return;
     if (react && standing.grounded) {
@@ -450,6 +488,19 @@ function resolvePlayerCollision(first, second, react) {
   }
 
   separatePlayers(first, second, direction, overlapX);
+  const firstShielded = first.powerup === "shield";
+  const secondShielded = second.powerup === "shield";
+  if (firstShielded || secondShielded) {
+    if (first.powerup === "shield") first.powerup = null;
+    if (second.powerup === "shield") second.powerup = null;
+    if (!firstShielded) {
+      launchPlayer(first, direction, COLLISION_JUMP, "knockback");
+    }
+    if (!secondShielded) {
+      launchPlayer(second, -direction, COLLISION_JUMP, "knockback");
+    }
+    return;
+  }
   launchPlayer(first, direction, COLLISION_JUMP, "knockback");
   launchPlayer(second, -direction, COLLISION_JUMP, "knockback");
 }
@@ -467,6 +518,11 @@ function resolveAttacks(players) {
         Math.abs(opponentBounds.centerY - playerBounds.centerY) >= 42) {
       continue;
     }
+    if (opponent.powerup === "shield") {
+      opponent.powerup = null;
+      player.attackHit = true;
+      continue;
+    }
     opponent.vx = player.facing * 365;
     opponent.vy = -260;
     opponent.grounded = false;
@@ -475,6 +531,95 @@ function resolveAttacks(players) {
     opponent.stun = 0.2;
     player.attackHit = true;
   }
+}
+
+function updatePickups(game, delta) {
+  game.pickupSpawnTimer -= delta;
+  if (game.pickupSpawnTimer <= 0 && game.pickups.length < PICKUP_MAX_ACTIVE) {
+    const spawnPoints = [
+      { x: 320, y: 32, vx: 72, vy: 58 },
+      { x: 20, y: 210, vx: 76, vy: -54 },
+      { x: 620, y: 190, vx: -76, vy: 54 }
+    ];
+    const spawn = spawnPoints[game.pickupSpawnIndex % spawnPoints.length];
+    const type = PICKUP_TYPES[Math.floor(Math.random() * PICKUP_TYPES.length)];
+    game.pickups.push({
+      type: type.id,
+      x: spawn.x,
+      y: spawn.y,
+      vx: spawn.vx,
+      vy: spawn.vy,
+      life: PICKUP_LIFETIME,
+      phase: game.elapsed
+    });
+    game.pickupSpawnIndex += 1;
+    game.pickupSpawnTimer = PICKUP_SPAWN_INTERVAL;
+  }
+
+  for (const pickup of game.pickups) {
+    pickup.x += pickup.vx * delta;
+    pickup.y += pickup.vy * delta;
+    pickup.life -= delta;
+    if (pickup.x < 16 || pickup.x > WORLD.width - 16) {
+      pickup.x = Math.max(16, Math.min(WORLD.width - 16, pickup.x));
+      pickup.vx *= -1;
+    }
+    if (pickup.y < 24 || pickup.y > 320) {
+      pickup.y = Math.max(24, Math.min(320, pickup.y));
+      pickup.vy *= -1;
+    }
+
+    const pickupBounds = {
+      left: pickup.x - 8,
+      right: pickup.x + 8,
+      top: pickup.y - 8,
+      bottom: pickup.y + 8
+    };
+    for (const player of game.players) {
+      if (player.inPit) continue;
+      const bounds = playerBounds(player);
+      if (bounds.left >= pickupBounds.right ||
+          bounds.right <= pickupBounds.left ||
+          bounds.top >= pickupBounds.bottom ||
+          bounds.bottom <= pickupBounds.top) {
+        continue;
+      }
+
+      player.powerup = pickup.type;
+      player.weaponAmmo = pickup.type === "gun" ? 5 : 0;
+      pickup.life = 0;
+      break;
+    }
+  }
+  game.pickups = game.pickups.filter((pickup) => pickup.life > 0);
+}
+
+function updateProjectiles(game, delta) {
+  for (const projectile of game.projectiles) {
+    projectile.x += projectile.vx * delta;
+    projectile.life -= delta;
+    const target = game.players.find((player) => player.id !== projectile.owner);
+    if (!target || target.inPit || projectile.life <= 0 ||
+        projectile.x < 0 || projectile.x > WORLD.width) {
+      projectile.life = 0;
+      continue;
+    }
+
+    const bounds = playerBounds(target);
+    if (projectile.x < bounds.left || projectile.x > bounds.right ||
+        projectile.y < bounds.top || projectile.y > bounds.bottom) {
+      continue;
+    }
+
+    projectile.life = 0;
+    if (target.powerup === "shield") {
+      target.powerup = null;
+      continue;
+    }
+    launchPlayer(target, Math.sign(projectile.vx), COLLISION_JUMP, "knockback", 300);
+    target.stun = 0.15;
+  }
+  game.projectiles = game.projectiles.filter((projectile) => projectile.life > 0);
 }
 
 function getTransparentEffectSprite() {
@@ -515,13 +660,15 @@ export function stepGame(game, inputs, deltaSeconds) {
 
   const delta = Math.min(Math.max(deltaSeconds, 0), 0.04);
   game.elapsed += delta;
-  updatePlayer(game.players[0], inputs[0] ?? {}, delta);
-  updatePlayer(game.players[1], inputs[1] ?? {}, delta);
+  updatePlayer(game.players[0], inputs[0] ?? {}, delta, game);
+  updatePlayer(game.players[1], inputs[1] ?? {}, delta, game);
   const touchingPlayers = playersOverlap(game.players[0], game.players[1]);
   if (touchingPlayers) {
     resolvePlayerCollision(game.players[0], game.players[1], !game.playersTouching);
   }
   game.playersTouching = touchingPlayers;
+  updatePickups(game, delta);
+  updateProjectiles(game, delta);
   resolveAttacks(game.players);
 
   const respawnPlayer = (player) => {
@@ -544,6 +691,8 @@ export function stepGame(game, inputs, deltaSeconds) {
     player.impactTimer = 0;
     player.impactAnimation = null;
     player.jumpAnimation = null;
+    player.powerup = null;
+    player.weaponAmmo = 0;
     player.inPit = false;
     player.pitTimer = 0;
     player.rolling = false;
@@ -682,6 +831,8 @@ export function drawGame(context, game, pixelRatio = 1) {
   context.canvas.dataset.player2InPit = String(game.players[1].inPit);
   context.canvas.dataset.player1Y = game.players[0].y.toFixed(1);
   context.canvas.dataset.player2Y = game.players[1].y.toFixed(1);
+  context.canvas.dataset.player1Powerup = game.players[0].powerup ?? "";
+  context.canvas.dataset.player2Powerup = game.players[1].powerup ?? "";
   context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
   context.clearRect(0, 0, WORLD.width, WORLD.height);
 
@@ -690,12 +841,6 @@ export function drawGame(context, game, pixelRatio = 1) {
   sky.addColorStop(1, "#121722");
   context.fillStyle = sky;
   context.fillRect(0, 0, WORLD.width, WORLD.height);
-
-  context.fillStyle = "#2a3041";
-  for (let x = 22; x < WORLD.width; x += 54) {
-    const height = 18 + ((x * 7) % 38);
-    context.fillRect(x, 324 - height, 2, height);
-  }
 
   for (const platform of PLATFORMS) {
     const sprite = platform.spawn ? spawnPlatformSprite : platformSprite;
@@ -733,6 +878,23 @@ export function drawGame(context, game, pixelRatio = 1) {
     context.restore();
   }
 
+  for (const pickup of game.pickups) {
+    const type = PICKUP_TYPES.find((item) => item.id === pickup.type);
+    if (!type || !pickupSprite.complete || pickupSprite.naturalWidth === 0) continue;
+    const bob = Math.sin((game.elapsed - pickup.phase) * 5) * 2;
+    context.drawImage(
+      pickupSprite,
+      0,
+      type.frame * 16,
+      16,
+      16,
+      pickup.x - 8,
+      pickup.y - 8 + bob,
+      16,
+      16
+    );
+  }
+
   if (pitSprite.complete && pitSprite.naturalWidth > 0) {
     const pitFrame = Math.floor(game.elapsed / 2.5) % 4;
     for (let x = 0; x < WORLD.width; x += 32) {
@@ -744,7 +906,23 @@ export function drawGame(context, game, pixelRatio = 1) {
   }
 
   for (const player of game.players) {
+    if (player.powerup === "shield" && !player.inPit) {
+      context.save();
+      context.strokeStyle = player.id === 1 ? "#83e7ff" : "#ffd27a";
+      context.lineWidth = 2;
+      context.beginPath();
+      context.ellipse(player.x + 32, player.y + 32, 27, 30, 0, 0, Math.PI * 2);
+      context.stroke();
+      context.restore();
+    }
     drawPlayer(context, player, game.elapsed);
+  }
+
+  for (const projectile of game.projectiles) {
+    context.fillStyle = projectile.owner === 1 ? "#9deaff" : "#ffe097";
+    context.beginPath();
+    context.ellipse(projectile.x, projectile.y, 5, 2.5, 0, 0, Math.PI * 2);
+    context.fill();
   }
 
   if (pitSprite.complete && pitSprite.naturalWidth > 0) {
@@ -759,9 +937,17 @@ export function drawGame(context, game, pixelRatio = 1) {
   context.fillStyle = "#f4f0e8";
   context.font = "700 13px system-ui, sans-serif";
   context.textAlign = "left";
-  context.fillText(`P1  ${game.players[0].stocks}`, 16, 25);
+  const playerOne = game.players[0];
+  const playerTwo = game.players[1];
+  const playerOneStatus = playerOne.powerup === "gun"
+    ? `GUN ${playerOne.weaponAmmo}`
+    : PICKUP_TYPES.find((item) => item.id === playerOne.powerup)?.label;
+  const playerTwoStatus = playerTwo.powerup === "gun"
+    ? `GUN ${playerTwo.weaponAmmo}`
+    : PICKUP_TYPES.find((item) => item.id === playerTwo.powerup)?.label;
+  context.fillText(`P1  ${playerOne.stocks}${playerOneStatus ? ` · ${playerOneStatus}` : ""}`, 16, 25);
   context.textAlign = "right";
-  context.fillText(`P2  ${game.players[1].stocks}`, WORLD.width - 16, 25);
+  context.fillText(`P2  ${playerTwo.stocks}${playerTwoStatus ? ` · ${playerTwoStatus}` : ""}`, WORLD.width - 16, 25);
   context.textAlign = "center";
   context.font = "600 11px system-ui, sans-serif";
   context.fillStyle = "#b0b2c1";
