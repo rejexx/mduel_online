@@ -24,7 +24,7 @@ Open <http://localhost:8080>.
 - **Player 2:** A/D move, W jumps/climbs, S crouches/climbs down; press S while moving to roll. Press Q to duel or fire a pickup.
 - Jump direction is set at takeoff; you cannot steer during a jump or collision fall.
 - On a rope, release up/down to hold position; press left/right to jump off.
-- Pick up boots for one boosted jump, a shield to block one hit, or a five-shot gun. Pickups appear during play.
+- Pick up boots and press duel/fire while grounded to use their boosted jump; the boots stay equipped. A shield blocks attacks from the direction you're facing, and the gun has five shots.
 - On touch devices, use the on-screen buttons.
 - First player to knock the other player into the pit three times wins.
 

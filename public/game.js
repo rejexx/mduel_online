@@ -32,6 +32,8 @@ const COLLISION_RECOIL = 220;
 const COLLISION_JUMP = -200;
 const TRIP_SPEED = 220;
 const COLLISION_DURATION = 0.28;
+const PICKUP_BUBBLE_FRAMES = [0, 1, 2];
+const SHIELD_FRAME = 31;
 const PICKUP_TYPES = [
   { id: "gun", frame: 7, label: "GUN" },
   { id: "boots", frame: 9, label: "BOOTS" },
@@ -253,17 +255,22 @@ function updatePlayer(player, input, delta, game) {
     }
 
     if (input.jump && player.grounded && !player.crouching && !player.rolling && !player.climbing) {
-      const jumpSpeed = player.powerup === "boots" ? JUMP_SPEED * 1.5 : JUMP_SPEED;
-      player.vy = -jumpSpeed;
+      player.vy = -JUMP_SPEED;
       player.grounded = false;
       player.jumpAnimation = player.vx === 0 ? "standing" : "moving";
       player.jumpAnimationTime = 0;
-      if (player.powerup === "boots") player.powerup = null;
     }
 
     if (input.attack && player.attackCooldown <= 0 && !player.rolling) {
       player.attackCooldown = 0.48;
-      if (player.powerup === "gun" && player.weaponAmmo > 0 &&
+      if (player.powerup === "boots") {
+        if (player.grounded && !player.crouching && !player.climbing) {
+          player.vy = -JUMP_SPEED * 1.5;
+          player.grounded = false;
+          player.jumpAnimation = player.vx === 0 ? "standing" : "moving";
+          player.jumpAnimationTime = 0;
+        }
+      } else if (player.powerup === "gun" && player.weaponAmmo > 0 &&
           player.grounded && !player.crouching) {
         game.projectiles.push({
           x: player.x + (player.facing > 0 ? PLAYER_WIDTH : 0),
@@ -439,6 +446,10 @@ function launchPlayer(player, direction, verticalSpeed, animation, horizontalSpe
   player.facing = direction;
 }
 
+function shieldFaces(player, direction) {
+  return player.powerup === "shield" && player.facing === direction;
+}
+
 function resolvePlayerCollision(first, second, react) {
   let firstBounds = playerBounds(first);
   let secondBounds = playerBounds(second);
@@ -460,8 +471,13 @@ function resolvePlayerCollision(first, second, react) {
   const standing = croucher === first ? second : first;
 
   if (croucher) {
-    if (standing.powerup === "shield" && react) {
-      standing.powerup = null;
+    const croucherBounds = playerBounds(croucher);
+    const standingBounds = playerBounds(standing);
+    const directionToCroucher = Math.sign(
+      (croucherBounds.left + croucherBounds.right) / 2 -
+      (standingBounds.left + standingBounds.right) / 2
+    );
+    if (shieldFaces(standing, directionToCroucher) && react) {
       separateFromCrouchedPlayer(standing, croucher);
       return;
     }
@@ -488,11 +504,9 @@ function resolvePlayerCollision(first, second, react) {
   }
 
   separatePlayers(first, second, direction, overlapX);
-  const firstShielded = first.powerup === "shield";
-  const secondShielded = second.powerup === "shield";
+  const firstShielded = shieldFaces(first, -direction);
+  const secondShielded = shieldFaces(second, direction);
   if (firstShielded || secondShielded) {
-    if (first.powerup === "shield") first.powerup = null;
-    if (second.powerup === "shield") second.powerup = null;
     if (!firstShielded) {
       launchPlayer(first, direction, COLLISION_JUMP, "knockback");
     }
@@ -518,8 +532,10 @@ function resolveAttacks(players) {
         Math.abs(opponentBounds.centerY - playerBounds.centerY) >= 42) {
       continue;
     }
-    if (opponent.powerup === "shield") {
-      opponent.powerup = null;
+    const directionToAttacker = Math.sign(
+      playerBounds.centerX - opponentBounds.centerX
+    );
+    if (shieldFaces(opponent, directionToAttacker)) {
       player.attackHit = true;
       continue;
     }
@@ -612,8 +628,7 @@ function updateProjectiles(game, delta) {
     }
 
     projectile.life = 0;
-    if (target.powerup === "shield") {
-      target.powerup = null;
+    if (shieldFaces(target, -Math.sign(projectile.vx))) {
       continue;
     }
     launchPlayer(target, Math.sign(projectile.vx), COLLISION_JUMP, "knockback", 300);
@@ -882,6 +897,20 @@ export function drawGame(context, game, pixelRatio = 1) {
     const type = PICKUP_TYPES.find((item) => item.id === pickup.type);
     if (!type || !pickupSprite.complete || pickupSprite.naturalWidth === 0) continue;
     const bob = Math.sin((game.elapsed - pickup.phase) * 5) * 2;
+    const bubbleFrame = PICKUP_BUBBLE_FRAMES[
+      Math.floor(game.elapsed * 6) % PICKUP_BUBBLE_FRAMES.length
+    ];
+    context.drawImage(
+      pickupSprite,
+      0,
+      bubbleFrame * 16,
+      16,
+      16,
+      pickup.x - 8,
+      pickup.y - 8 + bob,
+      16,
+      16
+    );
     context.drawImage(
       pickupSprite,
       0,
@@ -906,16 +935,27 @@ export function drawGame(context, game, pixelRatio = 1) {
   }
 
   for (const player of game.players) {
-    if (player.powerup === "shield" && !player.inPit) {
-      context.save();
-      context.strokeStyle = player.id === 1 ? "#83e7ff" : "#ffd27a";
-      context.lineWidth = 2;
-      context.beginPath();
-      context.ellipse(player.x + 32, player.y + 32, 27, 30, 0, 0, Math.PI * 2);
-      context.stroke();
-      context.restore();
-    }
     drawPlayer(context, player, game.elapsed);
+    if (player.powerup === "shield" && !player.inPit) {
+      const shieldSprite = getTransparentEffectSprite();
+      if (shieldSprite) {
+        context.save();
+        context.translate(player.x + 32 + player.facing * 6, player.y + 29);
+        context.scale(player.facing, 1);
+        context.drawImage(
+          shieldSprite,
+          0,
+          SHIELD_FRAME * 32,
+          32,
+          32,
+          -16,
+          -16,
+          32,
+          32
+        );
+        context.restore();
+      }
+    }
   }
 
   for (const projectile of game.projectiles) {
