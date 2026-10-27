@@ -33,15 +33,31 @@ const COLLISION_JUMP = -200;
 const TRIP_SPEED = 220;
 const COLLISION_DURATION = 0.28;
 const PICKUP_BUBBLE_FRAMES = [0, 1, 2];
+const PICKUP_BUBBLE_ANIMATION_FPS = 10;
 const SHIELD_FRAME = 31;
 const PICKUP_TYPES = [
   { id: "gun", frame: 7, label: "GUN" },
   { id: "boots", frame: 9, label: "BOOTS" },
   { id: "shield", frame: 17, label: "SHIELD" }
 ];
-const PICKUP_SPAWN_INTERVAL = 8;
-const PICKUP_LIFETIME = 18;
-const PICKUP_MAX_ACTIVE = 2;
+const PICKUP_SPAWN_INTERVAL_MIN_TENTHS = 26;
+const PICKUP_SPAWN_INTERVAL_MAX_TENTHS = 50;
+const PICKUP_LIFETIME_MIN = 10;
+const PICKUP_LIFETIME_MAX = 25;
+const PICKUP_MAX_ACTIVE = 3;
+const PICKUP_SPEED_MIN = 64;
+const PICKUP_SPEED_MAX = 144;
+const REFERENCE_TICKS_PER_SECOND = 60;
+const REFERENCE_SPEED_SCALE = 1 / 256;
+const REFERENCE_WORLD_WIDTH = 256;
+const REFERENCE_WORLD_HEIGHT = 192;
+const PICKUP_BOUNDS = {
+  left: 20,
+  right: WORLD.width - 20,
+  top: 17,
+  bottom: 367
+};
+const PICKUP_RADIUS = 16;
 const PROJECTILE_SPEED = 420;
 const PROJECTILE_LIFETIME = 1.4;
 const PLATFORMS = [
@@ -549,47 +565,85 @@ function resolveAttacks(players) {
   }
 }
 
+function randomBetween(min, max) {
+  return min + Math.random() * (max - min);
+}
+
+function randomIntegerBetween(min, max) {
+  return Math.floor(randomBetween(min, max + 1));
+}
+
+function pickupVelocity(speed, dimension, direction = 1) {
+  const referenceDimension = dimension === "x"
+    ? REFERENCE_WORLD_WIDTH
+    : REFERENCE_WORLD_HEIGHT;
+  const worldDimension = dimension === "x" ? WORLD.width : WORLD.height;
+  // Convert DS fixed-point pixels per frame into browser-world pixels per second.
+  return speed * REFERENCE_SPEED_SCALE *
+    (worldDimension / referenceDimension) *
+    REFERENCE_TICKS_PER_SECOND * direction;
+}
+
 function updatePickups(game, delta) {
+  const startingPickupCount = game.pickups.length;
   game.pickupSpawnTimer -= delta;
   if (game.pickupSpawnTimer <= 0 && game.pickups.length < PICKUP_MAX_ACTIVE) {
     const spawnPoints = [
-      { x: 320, y: 32, vx: 72, vy: 58 },
-      { x: 20, y: 210, vx: 76, vy: -54 },
-      { x: 620, y: 190, vx: -76, vy: 54 }
+      { x: 320, y: 32, edge: "top" },
+      { x: 20, y: 210, edge: "left" },
+      { x: 620, y: 190, edge: "right" }
     ];
     const spawn = spawnPoints[game.pickupSpawnIndex % spawnPoints.length];
     const type = PICKUP_TYPES[Math.floor(Math.random() * PICKUP_TYPES.length)];
+    const horizontalSpeed = spawn.edge === "top"
+      ? randomIntegerBetween(0, PICKUP_SPEED_MAX) *
+        (Math.random() < 0.5 ? -1 : 1)
+      : randomIntegerBetween(PICKUP_SPEED_MIN, PICKUP_SPEED_MAX) *
+        (spawn.edge === "left" ? 1 : -1);
+    const verticalSpeed = spawn.edge === "top"
+      ? randomIntegerBetween(PICKUP_SPEED_MIN, PICKUP_SPEED_MAX)
+      : randomIntegerBetween(0, PICKUP_SPEED_MAX) *
+        (Math.random() < 0.5 ? -1 : 1);
     game.pickups.push({
       type: type.id,
       x: spawn.x,
       y: spawn.y,
-      vx: spawn.vx,
-      vy: spawn.vy,
-      life: PICKUP_LIFETIME,
+      vx: pickupVelocity(horizontalSpeed, "x"),
+      vy: pickupVelocity(verticalSpeed, "y"),
+      life: randomIntegerBetween(PICKUP_LIFETIME_MIN, PICKUP_LIFETIME_MAX),
       phase: game.elapsed
     });
     game.pickupSpawnIndex += 1;
-    game.pickupSpawnTimer = PICKUP_SPAWN_INTERVAL;
+    game.pickupSpawnTimer = randomIntegerBetween(
+      PICKUP_SPAWN_INTERVAL_MIN_TENTHS,
+      PICKUP_SPAWN_INTERVAL_MAX_TENTHS
+    ) / 10;
   }
 
   for (const pickup of game.pickups) {
     pickup.x += pickup.vx * delta;
     pickup.y += pickup.vy * delta;
     pickup.life -= delta;
-    if (pickup.x < 16 || pickup.x > WORLD.width - 16) {
-      pickup.x = Math.max(16, Math.min(WORLD.width - 16, pickup.x));
+    if (pickup.x < PICKUP_BOUNDS.left || pickup.x > PICKUP_BOUNDS.right) {
+      pickup.x = Math.max(
+        PICKUP_BOUNDS.left,
+        Math.min(PICKUP_BOUNDS.right, pickup.x)
+      );
       pickup.vx *= -1;
     }
-    if (pickup.y < 24 || pickup.y > 320) {
-      pickup.y = Math.max(24, Math.min(320, pickup.y));
+    if (pickup.y < PICKUP_BOUNDS.top || pickup.y > PICKUP_BOUNDS.bottom) {
+      pickup.y = Math.max(
+        PICKUP_BOUNDS.top,
+        Math.min(PICKUP_BOUNDS.bottom, pickup.y)
+      );
       pickup.vy *= -1;
     }
 
     const pickupBounds = {
-      left: pickup.x - 8,
-      right: pickup.x + 8,
-      top: pickup.y - 8,
-      bottom: pickup.y + 8
+      left: pickup.x - PICKUP_RADIUS,
+      right: pickup.x + PICKUP_RADIUS,
+      top: pickup.y - PICKUP_RADIUS,
+      bottom: pickup.y + PICKUP_RADIUS
     };
     for (const player of game.players) {
       if (player.inPit) continue;
@@ -608,6 +662,12 @@ function updatePickups(game, delta) {
     }
   }
   game.pickups = game.pickups.filter((pickup) => pickup.life > 0);
+  if (game.pickups.length < startingPickupCount) {
+    game.pickupSpawnTimer = randomIntegerBetween(
+      PICKUP_SPAWN_INTERVAL_MIN_TENTHS,
+      PICKUP_SPAWN_INTERVAL_MAX_TENTHS
+    ) / 10;
+  }
 }
 
 function updateProjectiles(game, delta) {
@@ -896,9 +956,11 @@ export function drawGame(context, game, pixelRatio = 1) {
   for (const pickup of game.pickups) {
     const type = PICKUP_TYPES.find((item) => item.id === pickup.type);
     if (!type || !pickupSprite.complete || pickupSprite.naturalWidth === 0) continue;
-    const bob = Math.sin((game.elapsed - pickup.phase) * 5) * 2;
+    const pickupAge = game.elapsed - pickup.phase;
+    const bob = Math.sin(pickupAge * 5) * 2;
     const bubbleFrame = PICKUP_BUBBLE_FRAMES[
-      Math.floor(game.elapsed * 6) % PICKUP_BUBBLE_FRAMES.length
+      Math.floor(pickupAge * PICKUP_BUBBLE_ANIMATION_FPS) %
+      PICKUP_BUBBLE_FRAMES.length
     ];
     context.drawImage(
       pickupSprite,
@@ -906,10 +968,10 @@ export function drawGame(context, game, pixelRatio = 1) {
       bubbleFrame * 32,
       32,
       32,
-      pickup.x - 8,
-      pickup.y - 8 + bob,
-      16,
-      16
+      pickup.x - 16,
+      pickup.y - 16 + bob,
+      32,
+      32
     );
     context.drawImage(
       pickupSprite,
