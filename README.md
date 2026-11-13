@@ -25,7 +25,7 @@ Open <http://localhost:8080>.
 - Jump direction is set at takeoff; you cannot steer during a jump or collision fall.
 - On a rope, release up/down to hold position; press left/right to jump off.
 - Pick up boots and press duel/fire while grounded to use their boosted jump; the boots stay equipped. A shield blocks attacks from the direction you're facing. The five-shot gun fires an instant shot while standing still; its beam must intersect the opponent and a shield blocks it from the front.
-- A knockout removes all loose and held power-ups, plays the death animation for about two seconds, shows the current score for one second, then resets both players to their starting positions.
+- A gun knockout disintegrates the hit player; other knockouts keep the pit-sink animation. All knockouts remove power-ups, play the death animation for about two seconds, show the current score for one second, then reset both players.
 - On touch devices, use the on-screen buttons.
 - First player to knock out the other player three times wins.
 

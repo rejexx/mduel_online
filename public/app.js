@@ -269,6 +269,10 @@ function validGameSnapshot(snapshot) {
       Number.isFinite(player.vx) &&
       Number.isFinite(player.vy) &&
       Number.isInteger(player.stocks) &&
+      typeof player.disintegrating === "boolean" &&
+      Number.isFinite(player.disintegrateAge) &&
+      player.disintegrateAge >= 0 &&
+      player.disintegrateAge <= 0.8 &&
       Number.isFinite(player.gunFireTimer) &&
       player.gunFireTimer >= 0 &&
       player.gunFireTimer <= 1 &&

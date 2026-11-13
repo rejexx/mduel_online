@@ -33,6 +33,8 @@ const GUN_FIRE_DURATION = GUN_FIRE_FRAMES.length * GUN_FIRE_FRAME_DURATION;
 const GUN_HEIGHT = 16;
 const DEATH_ANIMATION_DURATION = 2;
 const DEATH_SINK_SPEED = 30;
+const DISINTEGRATE_FRAMES = [0, 1, 2, 3];
+const DISINTEGRATE_DURATION = 0.8;
 const ROUND_PAUSE_DURATION = 1;
 const COLLISION_RECOIL = 220;
 const COLLISION_JUMP = -200;
@@ -149,6 +151,8 @@ function createPlayer(id, x, color, facing) {
     attackTimer: 0,
     attackHit: false,
     gunFireTimer: 0,
+    disintegrating: false,
+    disintegrateAge: 0,
     powerup: null,
     weaponAmmo: 0,
     climbing: false,
@@ -499,11 +503,11 @@ function fireGun(game, player) {
 
   target.inPit = true;
   target.pitTimer = 0;
-  target.y = PIT_SURFACE_Y - PLAYER_HEIGHT;
-  target.vy = DEATH_SINK_SPEED;
+  target.vy = 0;
+  target.disintegrating = true;
+  target.disintegrateAge = 0;
   target.climbing = false;
   target.jumpAnimation = null;
-  game.pitSplashes.push({ x: target.x + PLAYER_WIDTH / 2, age: 0 });
   beginDeathAnimation(game, [target]);
 }
 
@@ -771,7 +775,7 @@ function beginDeathAnimation(game, deadPlayers) {
       player.y = PIT_SURFACE_Y - PLAYER_HEIGHT;
       game.pitSplashes.push({ x: player.x + PLAYER_WIDTH / 2, age: 0 });
     }
-    player.vy = DEATH_SINK_SPEED;
+    player.vy = player.disintegrating ? 0 : DEATH_SINK_SPEED;
   }
   for (const player of game.players) {
     player.powerup = null;
@@ -811,6 +815,8 @@ function resetPlayerForRound(player) {
   player.attackTimer = 0;
   player.attackHit = false;
   player.gunFireTimer = 0;
+  player.disintegrating = false;
+  player.disintegrateAge = 0;
   player.powerup = null;
   player.weaponAmmo = 0;
   player.climbing = false;
@@ -847,7 +853,14 @@ function advanceDeathAnimation(game, delta) {
   game.elapsed += delta;
   game.deathAnimationTimer = Math.max(0, game.deathAnimationTimer - delta);
   for (const player of game.players) {
-    if (player.inPit) updatePlayer(player, {}, delta, game);
+    if (player.disintegrating) {
+      player.disintegrateAge = Math.min(
+        DISINTEGRATE_DURATION,
+        player.disintegrateAge + delta
+      );
+    } else if (player.inPit) {
+      updatePlayer(player, {}, delta, game);
+    }
   }
   for (const splash of game.pitSplashes) splash.age += delta;
   game.pitSplashes = game.pitSplashes.filter((splash) => splash.age < PIT_SPLASH_DURATION);
@@ -907,6 +920,7 @@ export function stepGame(game, inputs, deltaSeconds) {
 }
 
 function drawPlayer(context, player, elapsed) {
+  if (player.disintegrating) return;
   const image = playerSprites[player.id - 1];
   const blink = player.stun > 0 && Math.floor(player.stun * 24) % 2 === 0;
   if (blink) return;
@@ -976,6 +990,28 @@ function drawPlayer(context, player, elapsed) {
   context.beginPath();
   context.ellipse(player.x + 32, player.y + 30, 18, 26, 0, 0, Math.PI * 2);
   context.fill();
+}
+
+function drawDisintegration(context, player) {
+  if (!player.disintegrating || player.disintegrateAge >= DISINTEGRATE_DURATION) return;
+  const sprite = getTransparentEffectSprite();
+  if (!sprite) return;
+
+  const frameIndex = Math.min(
+    DISINTEGRATE_FRAMES.length - 1,
+    Math.floor((player.disintegrateAge / DISINTEGRATE_DURATION) * DISINTEGRATE_FRAMES.length)
+  );
+  context.drawImage(
+    sprite,
+    0,
+    DISINTEGRATE_FRAMES[frameIndex] * 32,
+    32,
+    32,
+    player.x,
+    player.y,
+    PLAYER_WIDTH,
+    PLAYER_HEIGHT
+  );
 }
 
 function drawPitSplash(context, splash) {
@@ -1108,6 +1144,7 @@ export function drawGame(context, game, pixelRatio = 1) {
 
   for (const player of game.players) {
     drawPlayer(context, player, game.elapsed);
+    drawDisintegration(context, player);
     if (player.powerup === "shield" && !player.inPit) {
       const shieldSprite = getTransparentEffectSprite();
       if (shieldSprite) {
