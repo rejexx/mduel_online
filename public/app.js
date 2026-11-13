@@ -165,7 +165,7 @@ function sendGameState() {
 }
 
 function showWinner() {
-  if (!game.winner || game.roundPauseTimer > 0) return;
+  if (!game.winner || game.deathAnimationTimer > 0 || game.roundPauseTimer > 0) return;
   elements.matchResult.hidden = false;
   elements.winnerMessage.textContent = `Player ${game.winner} wins!`;
   elements.rematch.hidden = false;
@@ -194,7 +194,9 @@ function animationLoop(timestamp) {
 
   const scale = elements.canvas.width / WORLD.width;
   drawGame(context, game, scale);
-  if (game.winner && game.roundPauseTimer === 0) showWinner();
+  if (game.winner && game.deathAnimationTimer === 0 && game.roundPauseTimer === 0) {
+    showWinner();
+  }
   animationFrame = window.requestAnimationFrame(animationLoop);
 }
 
@@ -253,6 +255,9 @@ function validGameSnapshot(snapshot) {
 
   return snapshot &&
     Number.isFinite(snapshot.elapsed) &&
+    Number.isFinite(snapshot.deathAnimationTimer) &&
+    snapshot.deathAnimationTimer >= 0 &&
+    snapshot.deathAnimationTimer <= 2 &&
     Number.isFinite(snapshot.roundPauseTimer) &&
     snapshot.roundPauseTimer >= 0 &&
     snapshot.roundPauseTimer <= 1 &&
@@ -320,7 +325,7 @@ function handleConnectionMessage(message) {
 
   if (role === "guest" && message.type === "state" && validGameSnapshot(message.game)) {
     game = message.game;
-    if (game.winner && game.roundPauseTimer === 0) {
+    if (game.winner && game.deathAnimationTimer === 0 && game.roundPauseTimer === 0) {
       showWinner();
     } else {
       elements.matchResult.hidden = true;

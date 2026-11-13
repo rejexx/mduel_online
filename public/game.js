@@ -23,7 +23,6 @@ const ROLL_FRAMES = [7, 8, 9, 10, 5];
 const ROLL_DURATION = 0.4;
 const PIT_SURFACE_Y = 368;
 const PIT_SPLASH_DURATION = 0.4;
-const PIT_SINK_DURATION = 0.8;
 const PIT_SPLASH_Y_OFFSET = 12;
 const PIT_SPLASH_FRAMES = [4, 5, 6, 7];
 const COLLISION_FRAMES = [26, 27, 26, 24];
@@ -32,6 +31,8 @@ const GUN_FIRE_FRAMES = [30, 31, 31, 30];
 const GUN_FIRE_FRAME_DURATION = 1 / 15;
 const GUN_FIRE_DURATION = GUN_FIRE_FRAMES.length * GUN_FIRE_FRAME_DURATION;
 const GUN_HEIGHT = 16;
+const DEATH_ANIMATION_DURATION = 2;
+const DEATH_SINK_SPEED = 30;
 const ROUND_PAUSE_DURATION = 1;
 const COLLISION_RECOIL = 220;
 const COLLISION_JUMP = -200;
@@ -170,6 +171,7 @@ export function createGame() {
     scores: [0, 0],
     winner: null,
     elapsed: 0,
+    deathAnimationTimer: 0,
     roundPauseTimer: 0,
     playersTouching: false,
     pickups: [],
@@ -495,8 +497,14 @@ function fireGun(game, player) {
     return;
   }
 
-  registerDeath(game, target);
-  beginRoundPause(game);
+  target.inPit = true;
+  target.pitTimer = 0;
+  target.y = PIT_SURFACE_Y - PLAYER_HEIGHT;
+  target.vy = DEATH_SINK_SPEED;
+  target.climbing = false;
+  target.jumpAnimation = null;
+  game.pitSplashes.push({ x: target.x + PLAYER_WIDTH / 2, age: 0 });
+  beginDeathAnimation(game, [target]);
 }
 
 function resolvePlayerCollision(first, second, react) {
@@ -751,15 +759,25 @@ function registerDeath(game, player) {
   }
 }
 
-function beginRoundPause(game) {
-  game.roundPauseTimer = ROUND_PAUSE_DURATION;
+function beginDeathAnimation(game, deadPlayers) {
+  game.deathAnimationTimer = DEATH_ANIMATION_DURATION;
   game.playersTouching = false;
   game.pickups = [];
+  for (const player of deadPlayers) {
+    registerDeath(game, player);
+    if (!player.inPit) {
+      player.inPit = true;
+      player.pitTimer = 0;
+      player.y = PIT_SURFACE_Y - PLAYER_HEIGHT;
+      game.pitSplashes.push({ x: player.x + PLAYER_WIDTH / 2, age: 0 });
+    }
+    player.vy = DEATH_SINK_SPEED;
+  }
   for (const player of game.players) {
     player.powerup = null;
     player.weaponAmmo = 0;
     player.vx = 0;
-    player.vy = 0;
+    if (!player.inPit) player.vy = 0;
     player.rolling = false;
     player.rollTimer = 0;
     player.crouching = false;
@@ -767,6 +785,12 @@ function beginRoundPause(game) {
     player.attackTimer = 0;
     player.attackHit = false;
   }
+}
+
+function beginRoundPause(game) {
+  game.roundPauseTimer = ROUND_PAUSE_DURATION;
+  game.deathAnimationTimer = 0;
+  for (const player of game.players) player.vy = 0;
 }
 
 function resetPlayerForRound(player) {
@@ -819,16 +843,30 @@ function advanceRoundPause(game, delta) {
   return game;
 }
 
+function advanceDeathAnimation(game, delta) {
+  game.elapsed += delta;
+  game.deathAnimationTimer = Math.max(0, game.deathAnimationTimer - delta);
+  for (const player of game.players) {
+    if (player.inPit) updatePlayer(player, {}, delta, game);
+  }
+  for (const splash of game.pitSplashes) splash.age += delta;
+  game.pitSplashes = game.pitSplashes.filter((splash) => splash.age < PIT_SPLASH_DURATION);
+  updatePickupPops(game, delta);
+  if (game.deathAnimationTimer === 0) beginRoundPause(game);
+  return game;
+}
+
 export function stepGame(game, inputs, deltaSeconds) {
   const delta = Math.min(Math.max(deltaSeconds, 0), 0.04);
+  if (game.deathAnimationTimer > 0) return advanceDeathAnimation(game, delta);
   if (game.roundPauseTimer > 0) return advanceRoundPause(game, delta);
   if (game.winner) return game;
 
   game.elapsed += delta;
   updatePlayer(game.players[0], inputs[0] ?? {}, delta, game);
-  if (game.roundPauseTimer > 0) return game;
+  if (game.deathAnimationTimer > 0 || game.roundPauseTimer > 0) return game;
   updatePlayer(game.players[1], inputs[1] ?? {}, delta, game);
-  if (game.roundPauseTimer > 0) return game;
+  if (game.deathAnimationTimer > 0 || game.roundPauseTimer > 0) return game;
   const touchingPlayers = playersOverlap(game.players[0], game.players[1]);
   if (touchingPlayers) {
     resolvePlayerCollision(game.players[0], game.players[1], !game.playersTouching);
@@ -852,18 +890,13 @@ export function stepGame(game, inputs, deltaSeconds) {
         x: player.x + PLAYER_WIDTH / 2,
         age: 0
       });
-    }
-
-    if (player.inPit && player.pitTimer >= PIT_SINK_DURATION) {
       deadPlayers.push(player);
     } else if (!player.inPit && player.y > WORLD.height + PLAYER_HEIGHT) {
       deadPlayers.push(player);
     }
   }
-
   if (deadPlayers.length > 0) {
-    for (const player of deadPlayers) registerDeath(game, player);
-    beginRoundPause(game);
+    beginDeathAnimation(game, deadPlayers);
     return game;
   }
 
