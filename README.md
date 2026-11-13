@@ -1,8 +1,8 @@
 # Mduel Online
 
 A browser reboot of classic Mduel. The current MVP slice has a two-player
-platform arena, local play, online rooms, and sprites from the legacy Mduel
-project.
+platform arena with randomly generated layouts, local play, online rooms, and
+sprites from the legacy Mduel project.
 
 I used to play this with my brother and friends all the time. I wanted a way to
 do so online. I found a few old repos online and used AI to bring it back to
@@ -24,9 +24,10 @@ Open <http://localhost:8080>.
 - **Player 2:** A/D move, W jumps/climbs, S crouches/climbs down; press S while moving to roll. Press Q to duel or fire a pickup.
 - Jump direction is set at takeoff; you cannot steer during a jump or collision fall.
 - On a rope, release up/down to hold position; press left/right to jump off.
-- Pick up boots and press duel/fire while grounded to use their boosted jump; the boots stay equipped. A shield blocks attacks from the direction you're facing, and the gun has five shots.
+- Pick up boots and press duel/fire while grounded to use their boosted jump; the boots stay equipped. A shield blocks attacks from the direction you're facing. The five-shot gun fires an instant shot while standing still; its beam must intersect the opponent and a shield blocks it from the front.
+- A knockout removes all loose and held power-ups, shows the current score for one second, then resets both players to their starting positions.
 - On touch devices, use the on-screen buttons.
-- First player to knock the other player into the pit three times wins.
+- First player to knock out the other player three times wins.
 
 Choose **Play on this device** for local multiplayer. To play online, host a
 game and share the code shown above the arena (or copy the invite link). The
@@ -62,7 +63,7 @@ appeared in every version of Mduel.
 | Lightning / 1000V | Classic and DS | Electrifies its holder; player contact can kill the unprotected opponent. | Not implemented |
 | Invisibility | Classic and DS | Temporarily makes its holder invisible. | Not implemented |
 | Mine | Classic and DS | Lets its holder place a mine as a trap. | Not implemented |
-| Gun | Classic and DS | Fires a limited-use attack; the DS version has five shots. | Implemented as a five-shot projectile with knockback; hit behavior is simplified from the reference. |
+| Gun | Classic and DS | Fires a limited-use attack; the DS version has five shots. | Five standing-only, stationary hitscan shots with the DS firing animation; a hit knocks out the opponent unless a shield blocks it. |
 | Explode / TNT | Classic and DS | Explodes floor/platform tiles; TNT remains an active pickup that collides with tiles. | Not implemented |
 | Boots | DS addition | Gives the holder a stronger jump when activated. | Implemented; persistent, activated with duel/fire while grounded. |
 | Grenade | DS addition | Throws an explosive projectile. | Not implemented |
@@ -105,7 +106,8 @@ before merging.
 
 - The arena and combat loop are still simplified. Movement, player/platform
   collisions, crouching, rolling, player bump reactions, and pit sinking now
-  have another tuning pass, but still need playtesting against the DS reference.
+  have another tuning pass, and the level now uses a fresh DS-inspired random
+  brick layout each round; these still need playtesting against the DS reference.
   Boots, shields, and a five-shot gun are implemented as a starter pickup set;
   the rest of the original power-ups, sound, and other modes are not implemented.
   Legacy character, platform, rope, power-up, pit, and pickup sprite sheets are included.

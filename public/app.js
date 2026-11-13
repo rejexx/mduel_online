@@ -37,6 +37,11 @@ const GAME_ID_PREFIX = "mduel";
 const ROOM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const INPUT_KEYS = ["left", "right", "up", "down", "attack"];
 const VALID_POWERUPS = [null, "gun", "boots", "shield"];
+const VALID_PLATFORM_ROWS = [80, 144, 208, 272, 336];
+const REQUIRED_PLATFORM_ANCHORS = [
+  ...[0, 1, 2, 15, 16, 17].map((column) => ({ column, y: 80 })),
+  ...[0, 1, 2, 3, 13, 14, 15, 16].map((column) => ({ column, y: 336 }))
+];
 const controls = {
   1: {
     left: "ArrowLeft",
@@ -160,7 +165,7 @@ function sendGameState() {
 }
 
 function showWinner() {
-  if (!game.winner) return;
+  if (!game.winner || game.roundPauseTimer > 0) return;
   elements.matchResult.hidden = false;
   elements.winnerMessage.textContent = `Player ${game.winner} wins!`;
   elements.rematch.hidden = false;
@@ -189,7 +194,7 @@ function animationLoop(timestamp) {
 
   const scale = elements.canvas.width / WORLD.width;
   drawGame(context, game, scale);
-  if (game.winner) showWinner();
+  if (game.winner && game.roundPauseTimer === 0) showWinner();
   animationFrame = window.requestAnimationFrame(animationLoop);
 }
 
@@ -216,18 +221,41 @@ function beginMatch(matchMode, matchRole = null, waiting = false) {
       Number(controlGroup.dataset.touchPlayer) !== (matchRole === "host" ? 1 : 2);
   }
   setMatchStatus(matchMode === "local"
-    ? "First to three falls wins"
+    ? "First to three knockouts wins"
     : waiting
       ? matchRole === "host" ? "Waiting for the other player to join…" : "Connecting to host…"
-      : "Connected · first to three falls wins");
+      : "Connected · first to three knockouts wins");
   showGame();
   cancelAnimationFrame(animationFrame);
   animationFrame = window.requestAnimationFrame(animationLoop);
 }
 
 function validGameSnapshot(snapshot) {
+  const validPlatforms = Array.isArray(snapshot?.platforms) &&
+    snapshot.platforms.length >= REQUIRED_PLATFORM_ANCHORS.length &&
+    snapshot.platforms.length <= 68 &&
+    snapshot.platforms.every((platform) =>
+      platform &&
+      Number.isInteger(platform.x) &&
+      platform.x >= 32 &&
+      platform.x <= 576 &&
+      (platform.x - 32) % 32 === 0 &&
+      VALID_PLATFORM_ROWS.includes(platform.y) &&
+      platform.width === 28 &&
+      platform.spawn === (platform.y === 336)
+    ) &&
+    REQUIRED_PLATFORM_ANCHORS.every((anchor) =>
+      snapshot.platforms.some((platform) =>
+        platform.x === anchor.column * 32 + 32 &&
+        platform.y === anchor.y
+      )
+    );
+
   return snapshot &&
     Number.isFinite(snapshot.elapsed) &&
+    Number.isFinite(snapshot.roundPauseTimer) &&
+    snapshot.roundPauseTimer >= 0 &&
+    snapshot.roundPauseTimer <= 1 &&
     Array.isArray(snapshot.players) &&
     snapshot.players.length === 2 &&
     snapshot.players.every((player) =>
@@ -236,6 +264,9 @@ function validGameSnapshot(snapshot) {
       Number.isFinite(player.vx) &&
       Number.isFinite(player.vy) &&
       Number.isInteger(player.stocks) &&
+      Number.isFinite(player.gunFireTimer) &&
+      player.gunFireTimer >= 0 &&
+      player.gunFireTimer <= 1 &&
       VALID_POWERUPS.includes(player.powerup) &&
       Number.isInteger(player.weaponAmmo) &&
       player.weaponAmmo >= 0 &&
@@ -245,6 +276,7 @@ function validGameSnapshot(snapshot) {
     Array.isArray(snapshot.scores) &&
     snapshot.scores.length === 2 &&
     snapshot.scores.every(Number.isInteger) &&
+    validPlatforms &&
     Array.isArray(snapshot.pickups) &&
     snapshot.pickups.every((pickup) =>
       ["gun", "boots", "shield"].includes(pickup.type) &&
@@ -254,13 +286,13 @@ function validGameSnapshot(snapshot) {
       Number.isFinite(pickup.vy) &&
       Number.isFinite(pickup.life)
     ) &&
-    Array.isArray(snapshot.projectiles) &&
-    snapshot.projectiles.every((projectile) =>
-      Number.isFinite(projectile.x) &&
-      Number.isFinite(projectile.y) &&
-      Number.isFinite(projectile.vx) &&
-      Number.isFinite(projectile.life) &&
-      (projectile.owner === 1 || projectile.owner === 2)
+    Array.isArray(snapshot.pickupPops) &&
+    snapshot.pickupPops.every((pop) =>
+      Number.isFinite(pop.x) &&
+      Number.isFinite(pop.y) &&
+      Number.isFinite(pop.age) &&
+      pop.age >= 0 &&
+      pop.age <= 1
     ) &&
     (snapshot.winner === null || snapshot.winner === 1 || snapshot.winner === 2);
 }
@@ -288,11 +320,11 @@ function handleConnectionMessage(message) {
 
   if (role === "guest" && message.type === "state" && validGameSnapshot(message.game)) {
     game = message.game;
-    if (game.winner) {
+    if (game.winner && game.roundPauseTimer === 0) {
       showWinner();
     } else {
       elements.matchResult.hidden = true;
-      setMatchStatus("Connected · first to three falls wins");
+      setMatchStatus("Connected · first to three knockouts wins");
     }
   }
 }

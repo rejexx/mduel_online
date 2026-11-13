@@ -28,12 +28,20 @@ const PIT_SPLASH_Y_OFFSET = 12;
 const PIT_SPLASH_FRAMES = [4, 5, 6, 7];
 const COLLISION_FRAMES = [26, 27, 26, 24];
 const TRIP_FRAMES = [26, 27];
+const GUN_FIRE_FRAMES = [30, 31, 31, 30];
+const GUN_FIRE_FRAME_DURATION = 1 / 15;
+const GUN_FIRE_DURATION = GUN_FIRE_FRAMES.length * GUN_FIRE_FRAME_DURATION;
+const GUN_HEIGHT = 16;
+const ROUND_PAUSE_DURATION = 1;
 const COLLISION_RECOIL = 220;
 const COLLISION_JUMP = -200;
 const TRIP_SPEED = 220;
 const COLLISION_DURATION = 0.28;
 const PICKUP_BUBBLE_FRAMES = [0, 1, 2];
 const PICKUP_BUBBLE_ANIMATION_FPS = 10;
+const PICKUP_POP_FRAMES = [16, 17];
+const PICKUP_POP_FRAME_DURATION = 1 / 15;
+const PICKUP_POP_DURATION = PICKUP_POP_FRAMES.length * PICKUP_POP_FRAME_DURATION;
 const SHIELD_FRAME = 31;
 const PICKUP_TYPES = [
   { id: "gun", frame: 7, label: "GUN" },
@@ -58,42 +66,42 @@ const PICKUP_BOUNDS = {
   bottom: 367
 };
 const PICKUP_RADIUS = 16;
-const PROJECTILE_SPEED = 420;
-const PROJECTILE_LIFETIME = 1.4;
-const PLATFORMS = [
-  ...[2, 3, 4, 5, 12, 13, 14, 15].map((column) => ({
-    x: column * 32 + 32,
-    y: 80,
-    width: 28
-  })),
-  ...[0, 1, 2, 3, 4, 7, 8, 9, 10, 11, 12, 15, 16, 17].map((column) => ({
-    x: column * 32 + 32,
-    y: 144,
-    width: 28
-  })),
-  ...[0, 1, 2, 3, 7, 8, 9, 13, 14, 15, 16, 17].map((column) => ({
-    x: column * 32 + 32,
-    y: 208,
-    width: 28
-  })),
-  ...[1, 2, 3, 4, 8, 9, 10, 13, 14, 15, 16].map((column) => ({
-    x: column * 32 + 32,
-    y: 272,
-    width: 28
-  })),
-  ...[0, 1, 2, 3].map((column) => ({
-    x: column * 32 + 48,
-    y: 336,
-    width: 28,
-    spawn: true
-  })),
-  ...[13, 14, 15, 16].map((column) => ({
-    x: column * 32 + 48,
-    y: 336,
-    width: 28,
-    spawn: true
-  }))
-];
+const PLATFORM_TILE_WIDTH = 28;
+const PLATFORM_GRID_COLUMNS = 18;
+const PLATFORM_ROWS = [144, 208, 272];
+const PLATFORM_SPAWN_COLUMNS = [0, 1, 2, 3, 13, 14, 15, 16];
+const PLATFORM_EDGE_COLUMNS = [0, 1, 2, 15, 16, 17];
+
+function generatePlatforms() {
+  const platforms = [];
+  const addPlatform = (column, y, spawn = false) => {
+    platforms.push({
+      x: column * 32 + 32,
+      y,
+      width: PLATFORM_TILE_WIDTH,
+      spawn
+    });
+  };
+
+  for (const column of PLATFORM_EDGE_COLUMNS) addPlatform(column, 80);
+  for (const column of PLATFORM_SPAWN_COLUMNS) addPlatform(column, 336, true);
+
+  for (const y of PLATFORM_ROWS) {
+    let consecutiveGaps = 0;
+    for (let column = 0; column < PLATFORM_GRID_COLUMNS; column += 1) {
+      const placePlatform = consecutiveGaps >= 2 || Math.random() < 0.7;
+      if (placePlatform) {
+        addPlatform(column, y);
+        consecutiveGaps = 0;
+      } else {
+        consecutiveGaps += 1;
+      }
+    }
+  }
+
+  return platforms;
+}
+
 const ROPES = [160, 480].map((x) => ({ x, top: 8, bottom: 336 }));
 const playerSprites = [1, 2].map((id) => {
   const image = new Image();
@@ -139,6 +147,7 @@ function createPlayer(id, x, color, facing) {
     attackCooldown: 0,
     attackTimer: 0,
     attackHit: false,
+    gunFireTimer: 0,
     powerup: null,
     weaponAmmo: 0,
     climbing: false,
@@ -153,6 +162,7 @@ function createPlayer(id, x, color, facing) {
 
 export function createGame() {
   return {
+    platforms: generatePlatforms(),
     players: [
       createPlayer(1, 48, "#78c8ff", 1),
       createPlayer(2, 528, "#ffad73", -1)
@@ -160,9 +170,10 @@ export function createGame() {
     scores: [0, 0],
     winner: null,
     elapsed: 0,
+    roundPauseTimer: 0,
     playersTouching: false,
     pickups: [],
-    projectiles: [],
+    pickupPops: [],
     pickupSpawnTimer: 3,
     pickupSpawnIndex: 0,
     pitSplashes: []
@@ -204,6 +215,7 @@ function playerFeet(player) {
 }
 
 function updatePlayer(player, input, delta, game) {
+  player.gunFireTimer = Math.max(0, player.gunFireTimer - delta);
   if (player.inPit) {
     player.pitTimer += delta;
     player.y += player.vy * delta;
@@ -219,6 +231,7 @@ function updatePlayer(player, input, delta, game) {
 
   const stunned = player.stun > 0;
   const impacted = player.impactTimer > 0;
+  const firingLocked = player.gunFireTimer > 0;
   player.stun = Math.max(0, player.stun - delta);
   player.impactTimer = Math.max(0, player.impactTimer - delta);
   player.rollTimer = Math.max(0, player.rollTimer - delta);
@@ -238,7 +251,7 @@ function updatePlayer(player, input, delta, game) {
     player.vx = direction * RUN_SPEED;
     player.vy = 0;
     player.facing = direction;
-  } else if (!player.climbing && !stunned && !impacted && rope &&
+  } else if (!firingLocked && !player.climbing && !stunned && !impacted && rope &&
       direction === 0 && (input.up === true || input.down === true) &&
       !player.crouching && !player.rolling) {
     player.climbing = true;
@@ -249,8 +262,9 @@ function updatePlayer(player, input, delta, game) {
       ? CLIMB_DOWN_FRAMES[0]
       : CLIMB_UP_FRAMES[0];
   }
-  const wantsCrouch = !player.climbing && player.grounded && input.down === true;
-  if (!stunned && !impacted && player.grounded && !player.climbing &&
+  const wantsCrouch = !firingLocked && !player.climbing &&
+    player.grounded && input.down === true;
+  if (!firingLocked && !stunned && !impacted && player.grounded && !player.climbing &&
       input.roll === true && direction !== 0) {
     player.rolling = true;
     player.rollTimer = ROLL_DURATION;
@@ -261,7 +275,9 @@ function updatePlayer(player, input, delta, game) {
   );
 
   if (!stunned && !impacted) {
-    if (player.rolling) {
+    if (firingLocked) {
+      player.vx = 0;
+    } else if (player.rolling) {
       player.vx = player.facing * RUN_SPEED;
     } else if (player.climbing) {
       player.vx = 0;
@@ -270,14 +286,15 @@ function updatePlayer(player, input, delta, game) {
       if (!player.crouching && direction !== 0) player.facing = direction;
     }
 
-    if (input.jump && player.grounded && !player.crouching && !player.rolling && !player.climbing) {
+    if (!firingLocked && input.jump && player.grounded &&
+        !player.crouching && !player.rolling && !player.climbing) {
       player.vy = -JUMP_SPEED;
       player.grounded = false;
       player.jumpAnimation = player.vx === 0 ? "standing" : "moving";
       player.jumpAnimationTime = 0;
     }
 
-    if (input.attack && player.attackCooldown <= 0 && !player.rolling) {
+    if (!firingLocked && input.attack && player.attackCooldown <= 0 && !player.rolling) {
       player.attackCooldown = 0.48;
       if (player.powerup === "boots") {
         if (player.grounded && !player.crouching && !player.climbing) {
@@ -287,16 +304,8 @@ function updatePlayer(player, input, delta, game) {
           player.jumpAnimationTime = 0;
         }
       } else if (player.powerup === "gun" && player.weaponAmmo > 0 &&
-          player.grounded && !player.crouching) {
-        game.projectiles.push({
-          x: player.x + (player.facing > 0 ? PLAYER_WIDTH : 0),
-          y: player.y + 46,
-          vx: player.facing * PROJECTILE_SPEED,
-          owner: player.id,
-          life: PROJECTILE_LIFETIME
-        });
-        player.weaponAmmo -= 1;
-        if (player.weaponAmmo === 0) player.powerup = null;
+          player.grounded && !player.crouching && !player.climbing) {
+        fireGun(game, player);
       } else if (player.powerup !== "gun") {
         player.attackTimer = 0.18;
         player.attackHit = false;
@@ -340,7 +349,7 @@ function updatePlayer(player, input, delta, game) {
 
   if (!player.climbing) {
     let landingY = Infinity;
-    for (const platform of PLATFORMS) {
+    for (const platform of game.platforms) {
       const newBottom = player.y + PLAYER_HEIGHT;
       const feet = playerFeet(player);
       if (player.vy >= 0 &&
@@ -464,6 +473,30 @@ function launchPlayer(player, direction, verticalSpeed, animation, horizontalSpe
 
 function shieldFaces(player, direction) {
   return player.powerup === "shield" && player.facing === direction;
+}
+
+function fireGun(game, player) {
+  player.vx = 0;
+  player.gunFireTimer = GUN_FIRE_DURATION;
+  player.weaponAmmo -= 1;
+  if (player.weaponAmmo === 0) player.powerup = null;
+
+  const target = game.players.find((candidate) => candidate.id !== player.id);
+  if (!target || target.inPit) return;
+
+  const sourceBounds = playerBounds(player);
+  const targetBounds = playerBounds(target);
+  const sourceCenter = (sourceBounds.left + sourceBounds.right) / 2;
+  const targetCenter = (targetBounds.left + targetBounds.right) / 2;
+  const beamY = player.y + PLAYER_HEIGHT - GUN_HEIGHT;
+  if ((targetCenter - sourceCenter) * player.facing <= 0 ||
+      beamY < targetBounds.top || beamY > targetBounds.bottom ||
+      shieldFaces(target, -player.facing)) {
+    return;
+  }
+
+  registerDeath(game, target);
+  beginRoundPause(game);
 }
 
 function resolvePlayerCollision(first, second, react) {
@@ -657,6 +690,7 @@ function updatePickups(game, delta) {
 
       player.powerup = pickup.type;
       player.weaponAmmo = pickup.type === "gun" ? 5 : 0;
+      game.pickupPops.push({ x: pickup.x, y: pickup.y, age: 0 });
       pickup.life = 0;
       break;
     }
@@ -670,31 +704,9 @@ function updatePickups(game, delta) {
   }
 }
 
-function updateProjectiles(game, delta) {
-  for (const projectile of game.projectiles) {
-    projectile.x += projectile.vx * delta;
-    projectile.life -= delta;
-    const target = game.players.find((player) => player.id !== projectile.owner);
-    if (!target || target.inPit || projectile.life <= 0 ||
-        projectile.x < 0 || projectile.x > WORLD.width) {
-      projectile.life = 0;
-      continue;
-    }
-
-    const bounds = playerBounds(target);
-    if (projectile.x < bounds.left || projectile.x > bounds.right ||
-        projectile.y < bounds.top || projectile.y > bounds.bottom) {
-      continue;
-    }
-
-    projectile.life = 0;
-    if (shieldFaces(target, -Math.sign(projectile.vx))) {
-      continue;
-    }
-    launchPlayer(target, Math.sign(projectile.vx), COLLISION_JUMP, "knockback", 300);
-    target.stun = 0.15;
-  }
-  game.projectiles = game.projectiles.filter((projectile) => projectile.life > 0);
+function updatePickupPops(game, delta) {
+  for (const pop of game.pickupPops) pop.age += delta;
+  game.pickupPops = game.pickupPops.filter((pop) => pop.age < PICKUP_POP_DURATION);
 }
 
 function getTransparentEffectSprite() {
@@ -730,52 +742,103 @@ function getAttackBounds(player) {
   };
 }
 
+function registerDeath(game, player) {
+  const winnerIndex = player.id === 1 ? 1 : 0;
+  game.scores[winnerIndex] += 1;
+  player.stocks = Math.max(0, player.stocks - 1);
+  if (player.stocks === 0 && game.winner === null) {
+    game.winner = winnerIndex + 1;
+  }
+}
+
+function beginRoundPause(game) {
+  game.roundPauseTimer = ROUND_PAUSE_DURATION;
+  game.playersTouching = false;
+  game.pickups = [];
+  for (const player of game.players) {
+    player.powerup = null;
+    player.weaponAmmo = 0;
+    player.vx = 0;
+    player.vy = 0;
+    player.rolling = false;
+    player.rollTimer = 0;
+    player.crouching = false;
+    player.climbing = false;
+    player.attackTimer = 0;
+    player.attackHit = false;
+  }
+}
+
+function resetPlayerForRound(player) {
+  player.x = player.id === 1 ? 48 : 528;
+  player.y = 336 - PLAYER_HEIGHT;
+  player.vx = 0;
+  player.vy = 0;
+  player.facing = player.id === 1 ? 1 : -1;
+  player.grounded = true;
+  player.stun = 0;
+  player.impactTimer = 0;
+  player.impactAnimation = null;
+  player.inPit = false;
+  player.pitTimer = 0;
+  player.rolling = false;
+  player.rollTimer = 0;
+  player.attackCooldown = 0;
+  player.attackTimer = 0;
+  player.attackHit = false;
+  player.gunFireTimer = 0;
+  player.powerup = null;
+  player.weaponAmmo = 0;
+  player.climbing = false;
+  player.climbAnimationDirection = 0;
+  player.climbAnimationTime = 0;
+  player.climbingFrame = CLIMB_UP_FRAMES[0];
+  player.jumpAnimation = null;
+  player.jumpAnimationTime = 0;
+  player.crouching = false;
+}
+
+function advanceRoundPause(game, delta) {
+  game.elapsed += delta;
+  game.roundPauseTimer = Math.max(0, game.roundPauseTimer - delta);
+  for (const player of game.players) {
+    player.gunFireTimer = Math.max(0, player.gunFireTimer - delta);
+  }
+  for (const splash of game.pitSplashes) splash.age += delta;
+  game.pitSplashes = game.pitSplashes.filter((splash) => splash.age < PIT_SPLASH_DURATION);
+  updatePickupPops(game, delta);
+
+  if (game.roundPauseTimer === 0) {
+    for (const player of game.players) resetPlayerForRound(player);
+    if (!game.winner) game.platforms = generatePlatforms();
+    game.playersTouching = false;
+    game.pickups = [];
+    game.pitSplashes = [];
+    game.pickupSpawnTimer = 3;
+  }
+  return game;
+}
+
 export function stepGame(game, inputs, deltaSeconds) {
+  const delta = Math.min(Math.max(deltaSeconds, 0), 0.04);
+  if (game.roundPauseTimer > 0) return advanceRoundPause(game, delta);
   if (game.winner) return game;
 
-  const delta = Math.min(Math.max(deltaSeconds, 0), 0.04);
   game.elapsed += delta;
   updatePlayer(game.players[0], inputs[0] ?? {}, delta, game);
+  if (game.roundPauseTimer > 0) return game;
   updatePlayer(game.players[1], inputs[1] ?? {}, delta, game);
+  if (game.roundPauseTimer > 0) return game;
   const touchingPlayers = playersOverlap(game.players[0], game.players[1]);
   if (touchingPlayers) {
     resolvePlayerCollision(game.players[0], game.players[1], !game.playersTouching);
   }
   game.playersTouching = touchingPlayers;
+  updatePickupPops(game, delta);
   updatePickups(game, delta);
-  updateProjectiles(game, delta);
   resolveAttacks(game.players);
 
-  const respawnPlayer = (player) => {
-    const lostPlayer = player.id - 1;
-    const winner = 1 - lostPlayer;
-    game.scores[winner] += 1;
-    player.stocks -= 1;
-    if (player.stocks <= 0) {
-      game.winner = winner + 1;
-      return;
-    }
-
-    player.x = player.id === 1 ? 48 : 528;
-    player.y = 336 - PLAYER_HEIGHT;
-    player.vx = 0;
-    player.vy = 0;
-    player.facing = player.id === 1 ? 1 : -1;
-    player.grounded = true;
-    player.stun = 0;
-    player.impactTimer = 0;
-    player.impactAnimation = null;
-    player.jumpAnimation = null;
-    player.powerup = null;
-    player.weaponAmmo = 0;
-    player.inPit = false;
-    player.pitTimer = 0;
-    player.rolling = false;
-    player.rollTimer = 0;
-    player.climbing = false;
-    player.crouching = false;
-  };
-
+  const deadPlayers = [];
   for (const player of game.players) {
     if (!player.inPit && player.y + PLAYER_HEIGHT >= PIT_SURFACE_Y) {
       player.inPit = true;
@@ -792,10 +855,16 @@ export function stepGame(game, inputs, deltaSeconds) {
     }
 
     if (player.inPit && player.pitTimer >= PIT_SINK_DURATION) {
-      respawnPlayer(player);
+      deadPlayers.push(player);
     } else if (!player.inPit && player.y > WORLD.height + PLAYER_HEIGHT) {
-      respawnPlayer(player);
+      deadPlayers.push(player);
     }
+  }
+
+  if (deadPlayers.length > 0) {
+    for (const player of deadPlayers) registerDeath(game, player);
+    beginRoundPause(game);
+    return game;
   }
 
   for (const splash of game.pitSplashes) splash.age += delta;
@@ -812,6 +881,12 @@ function drawPlayer(context, player, elapsed) {
   let frame = 0;
   if (player.inPit) {
     frame = 21;
+  } else if (player.gunFireTimer > 0) {
+    const frameIndex = Math.min(
+      GUN_FIRE_FRAMES.length - 1,
+      Math.floor((GUN_FIRE_DURATION - player.gunFireTimer) / GUN_FIRE_FRAME_DURATION)
+    );
+    frame = GUN_FIRE_FRAMES[frameIndex];
   } else if (player.climbing) {
     frame = player.climbingFrame;
   } else if (player.impactAnimation === "trip" && !player.grounded) {
@@ -908,6 +983,8 @@ export function drawGame(context, game, pixelRatio = 1) {
   context.canvas.dataset.player2Y = game.players[1].y.toFixed(1);
   context.canvas.dataset.player1Powerup = game.players[0].powerup ?? "";
   context.canvas.dataset.player2Powerup = game.players[1].powerup ?? "";
+  context.canvas.dataset.score = `${game.scores[0]}-${game.scores[1]}`;
+  context.canvas.dataset.roundPauseTimer = game.roundPauseTimer.toFixed(2);
   context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
   context.clearRect(0, 0, WORLD.width, WORLD.height);
 
@@ -917,7 +994,7 @@ export function drawGame(context, game, pixelRatio = 1) {
   context.fillStyle = sky;
   context.fillRect(0, 0, WORLD.width, WORLD.height);
 
-  for (const platform of PLATFORMS) {
+  for (const platform of game.platforms) {
     const sprite = platform.spawn ? spawnPlatformSprite : platformSprite;
     if (sprite.complete && sprite.naturalWidth > 0) {
       context.drawImage(sprite, platform.x, platform.y);
@@ -979,10 +1056,10 @@ export function drawGame(context, game, pixelRatio = 1) {
       type.frame * 32,
       32,
       32,
-      pickup.x - 8,
-      pickup.y - 8 + bob,
-      16,
-      16
+      pickup.x - 16,
+      pickup.y - 16 + bob,
+      32,
+      32
     );
   }
 
@@ -1020,13 +1097,6 @@ export function drawGame(context, game, pixelRatio = 1) {
     }
   }
 
-  for (const projectile of game.projectiles) {
-    context.fillStyle = projectile.owner === 1 ? "#9deaff" : "#ffe097";
-    context.beginPath();
-    context.ellipse(projectile.x, projectile.y, 5, 2.5, 0, 0, Math.PI * 2);
-    context.fill();
-  }
-
   if (pitSprite.complete && pitSprite.naturalWidth > 0) {
     const pitFrame = Math.floor(game.elapsed / 2.5) % 4;
     for (let x = 0; x < WORLD.width; x += 32) {
@@ -1035,6 +1105,26 @@ export function drawGame(context, game, pixelRatio = 1) {
   }
 
   for (const splash of game.pitSplashes) drawPitSplash(context, splash);
+  const effectSpriteSheet = getTransparentEffectSprite();
+  if (effectSpriteSheet) {
+    for (const pop of game.pickupPops) {
+      const frameIndex = Math.min(
+        PICKUP_POP_FRAMES.length - 1,
+        Math.floor(pop.age / PICKUP_POP_FRAME_DURATION)
+      );
+      context.drawImage(
+        effectSpriteSheet,
+        0,
+        PICKUP_POP_FRAMES[frameIndex] * 32,
+        32,
+        32,
+        pop.x - 16,
+        pop.y - 16,
+        32,
+        32
+      );
+    }
+  }
 
   context.fillStyle = "#f4f0e8";
   context.font = "700 13px system-ui, sans-serif";
@@ -1053,4 +1143,23 @@ export function drawGame(context, game, pixelRatio = 1) {
   context.textAlign = "center";
   context.font = "600 11px system-ui, sans-serif";
   context.fillStyle = "#b0b2c1";
+  if (game.roundPauseTimer > 0) {
+    context.fillStyle = "#11131bf2";
+    context.fillRect(WORLD.width / 2 - 112, WORLD.height / 2 - 46, 224, 92);
+    context.strokeStyle = "#b9e57a";
+    context.lineWidth = 2;
+    context.strokeRect(WORLD.width / 2 - 112, WORLD.height / 2 - 46, 224, 92);
+    context.fillStyle = "#b9e57a";
+    context.font = "800 12px system-ui, sans-serif";
+    context.textBaseline = "middle";
+    context.fillText("MATCH SCORE", WORLD.width / 2, WORLD.height / 2 - 22);
+    context.fillStyle = "#f4f5f8";
+    context.font = "900 30px system-ui, sans-serif";
+    context.fillText(
+      `${game.scores[0]}  -  ${game.scores[1]}`,
+      WORLD.width / 2,
+      WORLD.height / 2 + 15
+    );
+    context.textBaseline = "alphabetic";
+  }
 }
