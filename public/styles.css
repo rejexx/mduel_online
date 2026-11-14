@@ -25,7 +25,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -46,6 +47,7 @@ button:hover:not(:disabled) {
 
 button:focus-visible,
 input:focus-visible,
+select:focus-visible,
 canvas:focus-visible {
   outline: 3px solid #fff;
   outline-offset: 3px;
@@ -58,6 +60,15 @@ button:disabled {
 
 input {
   min-width: 0;
+  border: 1px solid #454b5d;
+  border-radius: 8px;
+  padding: 0.75rem;
+  background: #11131b;
+  color: #fff;
+}
+
+select {
+  width: min(100%, 24rem);
   border: 1px solid #454b5d;
   border-radius: 8px;
   padding: 0.75rem;
@@ -167,12 +178,17 @@ footer {
   margin-top: 1.5rem;
 }
 
-.join-form label {
+.join-form label,
+.ruleset-choice label {
   display: block;
   margin-bottom: 0.5rem;
   color: #e5e7ed;
   font-size: 0.9rem;
   font-weight: 650;
+}
+
+.ruleset-choice {
+  margin-top: 1.25rem;
 }
 
 .join-row input {
@@ -190,6 +206,23 @@ footer {
 .hint {
   margin: 0.5rem 0 0;
   font-size: 0.8rem;
+}
+
+.powerup-guide {
+  border-top: 1px solid #333848;
+  padding-top: 0.75rem;
+  color: #c6cad4;
+  line-height: 1.5;
+}
+
+.powerup-guide summary {
+  color: #e5e7ed;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.powerup-guide p {
+  margin: 0.75rem 0 0;
 }
 
 .invite-panel {

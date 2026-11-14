@@ -32,6 +32,15 @@
           <button id="create-room" class="button-secondary" type="button">Host an online game</button>
         </div>
 
+        <div class="ruleset-choice">
+          <label for="ruleset-select">Ruleset</label>
+          <select id="ruleset-select">
+            <option value="millennium" selected>Millennium Edition (18 power-ups)</option>
+            <option value="original">Original (6 power-ups)</option>
+          </select>
+          <p class="hint">The selected edition controls the pickup pool.</p>
+        </div>
+
         <form id="join-form" class="join-form">
           <label for="room-code">Or join a friend's room</label>
           <div class="join-row">
@@ -80,14 +89,21 @@
         </div>
 
         <div class="control-guide">
+          <p id="ruleset-status" class="ruleset-status" role="status" aria-live="polite"></p>
           <p><span class="player-label blue">P1</span> <kbd>←</kbd><kbd>→</kbd> move
             <kbd>↑</kbd> jump/climb <kbd>↓</kbd> crouch/climb down; press while moving to roll
             <kbd>Enter</kbd> duel / fire</p>
           <p><span class="player-label orange">P2</span> <kbd>A</kbd><kbd>D</kbd> move
             <kbd>W</kbd> jump/climb <kbd>S</kbd> crouch/climb down; press while moving to roll
             <kbd>Q</kbd> duel / fire</p>
-          <p>Boots boost a grounded jump. The five-shot gun fires while standing still; a facing shield blocks it, and a hit disintegrates the target. Knockouts clear all power-ups, play the death animation for about two seconds, show the score for one second, then reset both players.</p>
+          <p>Pushes, trips, and wall impacts lead into a roll when landing. Wall impacts reflect horizontal momentum without a boost; jumps and falls from ledges land normally.</p>
+          <p>The five-shot gun fires while standing still; a facing shield blocks it, and a hit starts a hands-up falling pose while the target pixel-disintegrates over 0.5 seconds. After a knockout, both players can keep moving for about one second so simultaneous falls count; the game then shows the score for one second before resetting.</p>
           <p>On a rope, release up/down to hold position; press left/right to jump off.</p>
+          <details class="powerup-guide">
+            <summary>Power-up guide</summary>
+            <p><strong>Original:</strong> Skull knocks out its collector. 1000V knocks out an unprotected opponent on contact for 8 seconds. Invisibility lasts 8 seconds. Fire to place a mine; TNT destroys nearby non-spawn platforms on impact. The gun has five shots.</p>
+            <p><strong>Millennium Edition additions:</strong> Boots boost a grounded jump. Grenades explode and knock back; pucks bounce and knock back. Fire the chute in the air to slow falling, the hook to reach a nearby rope/platform, warp to teleport, and magnet to disarm an opponent in front. Nets trap (three jumps break free); shields block from the front; Dunce adds a hat; Weasel reverses controls briefly; the boomerang returns and can be caught to reuse.</p>
+          </details>
         </div>
         <div class="touch-controls" aria-label="Touch controls">
           <div class="touch-player" data-touch-player="1">
