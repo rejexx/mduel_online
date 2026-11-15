@@ -14,4 +14,5 @@ derivative. This notice does not claim ownership of the included artwork.
 The original effects sprite sheet, effectSprites.gif, is from
 https://github.com/pospi/mduel-ds/tree/master/code/data and is distributed under
 the GNU General Public License version 2 or later. The marshmallow splash uses
-its original frames 4-7 without modification.
+its original frames 4-7, and the gun-disintegration effect uses frames 0-3,
+without modification.

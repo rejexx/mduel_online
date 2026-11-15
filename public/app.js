@@ -1,4 +1,12 @@
-import { createGame, drawGame, stepGame, WORLD } from "./game.js";
+import {
+  createGame,
+  drawGame,
+  isPickupAvailable,
+  isPlayerPowerupAvailable,
+  isValidRuleset,
+  stepGame,
+  WORLD
+} from "./game.js";
 
 const elements = {
   lobby: document.querySelector("#lobby"),
@@ -9,6 +17,8 @@ const elements = {
   joinForm: document.querySelector("#join-form"),
   roomCode: document.querySelector("#room-code"),
   joinRoom: document.querySelector("#join-room"),
+  rulesetSelect: document.querySelector("#ruleset-select"),
+  rulesetStatus: document.querySelector("#ruleset-status"),
   invitePanel: document.querySelector("#invite-panel"),
   inviteCode: document.querySelector("#invite-code"),
   inviteLink: document.querySelector("#invite-link"),
@@ -36,7 +46,11 @@ if (!context) {
 const GAME_ID_PREFIX = "mduel";
 const ROOM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const INPUT_KEYS = ["left", "right", "up", "down", "attack"];
-const VALID_POWERUPS = [null, "gun", "boots", "shield"];
+const VALID_PLATFORM_ROWS = [80, 144, 208, 272, 336];
+const REQUIRED_PLATFORM_ANCHORS = [
+  ...[0, 1, 2, 15, 16, 17].map((column) => ({ column, y: 80 })),
+  ...[0, 1, 2, 3, 13, 14, 15, 16].map((column) => ({ column, y: 336 }))
+];
 const controls = {
   1: {
     left: "ArrowLeft",
@@ -59,7 +73,8 @@ const peerInputs = { held: {}, pressed: {} };
 
 let mode = "lobby";
 let role = null;
-let game = createGame();
+let selectedRuleset = elements.rulesetSelect.value;
+let game = createGame(selectedRuleset);
 let peer = null;
 let connection = null;
 let animationFrame = 0;
@@ -68,6 +83,7 @@ let lastSync = 0;
 let lastSentInput = "";
 let connectTimeout = 0;
 let onlineConnected = false;
+let authoritativeRulesetReceived = false;
 
 function setLobbyStatus(message, isError = false) {
   elements.networkStatus.textContent = message;
@@ -76,6 +92,25 @@ function setLobbyStatus(message, isError = false) {
 
 function setMatchStatus(message) {
   elements.matchStatus.textContent = message;
+}
+
+function rulesetDescription(ruleset) {
+  return ruleset === "original"
+    ? "Original (6 power-ups)"
+    : "Millennium Edition (18 power-ups)";
+}
+
+function updateRulesetStatus() {
+  if (mode === "online" && role === "guest") {
+    elements.rulesetSelect.disabled = true;
+    elements.rulesetStatus.textContent = authoritativeRulesetReceived
+      ? `Host ruleset: ${rulesetDescription(game.ruleset)}`
+      : "Ruleset: waiting for host selection…";
+    return;
+  }
+
+  elements.rulesetSelect.disabled = false;
+  elements.rulesetStatus.textContent = `Ruleset: ${rulesetDescription(game.ruleset)}`;
 }
 
 function roomPeerId(code) {
@@ -160,9 +195,13 @@ function sendGameState() {
 }
 
 function showWinner() {
-  if (!game.winner) return;
+  if ((!game.winner && !game.matchDraw) ||
+      game.deathResolutionTimer > 0 ||
+      game.roundPauseTimer > 0) return;
   elements.matchResult.hidden = false;
-  elements.winnerMessage.textContent = `Player ${game.winner} wins!`;
+  elements.winnerMessage.textContent = game.matchDraw
+    ? "Match tied!"
+    : `Player ${game.winner} wins!`;
   elements.rematch.hidden = false;
   setMatchStatus("Match over");
 }
@@ -189,7 +228,11 @@ function animationLoop(timestamp) {
 
   const scale = elements.canvas.width / WORLD.width;
   drawGame(context, game, scale);
-  if (game.winner) showWinner();
+  if ((game.winner || game.matchDraw) &&
+      game.deathResolutionTimer === 0 &&
+      game.roundPauseTimer === 0) {
+    showWinner();
+  }
   animationFrame = window.requestAnimationFrame(animationLoop);
 }
 
@@ -197,7 +240,11 @@ function beginMatch(matchMode, matchRole = null, waiting = false) {
   mode = matchMode;
   role = matchRole;
   onlineConnected = matchMode === "local" || (matchMode === "online" && !waiting);
-  game = createGame();
+  authoritativeRulesetReceived = matchMode !== "online" || matchRole !== "guest";
+  game = createGame(
+    matchMode === "online" && matchRole === "guest" ? "millennium" : selectedRuleset
+  );
+  updateRulesetStatus();
   lastFrame = 0;
   lastSync = 0;
   lastSentInput = "";
@@ -216,38 +263,109 @@ function beginMatch(matchMode, matchRole = null, waiting = false) {
       Number(controlGroup.dataset.touchPlayer) !== (matchRole === "host" ? 1 : 2);
   }
   setMatchStatus(matchMode === "local"
-    ? "First to three falls wins"
+    ? "First to three knockouts wins"
     : waiting
       ? matchRole === "host" ? "Waiting for the other player to join…" : "Connecting to host…"
-      : "Connected · first to three falls wins");
+      : "Connected · first to three knockouts wins");
   showGame();
   cancelAnimationFrame(animationFrame);
   animationFrame = window.requestAnimationFrame(animationLoop);
 }
 
 function validGameSnapshot(snapshot) {
+  const validPlatforms = Array.isArray(snapshot?.platforms) &&
+    snapshot.platforms.length >= REQUIRED_PLATFORM_ANCHORS.length &&
+    snapshot.platforms.length <= 68 &&
+    snapshot.platforms.every((platform) =>
+      platform &&
+      Number.isInteger(platform.x) &&
+      platform.x >= 32 &&
+      platform.x <= 576 &&
+      (platform.x - 32) % 32 === 0 &&
+      VALID_PLATFORM_ROWS.includes(platform.y) &&
+      platform.width === 28 &&
+      platform.spawn === (platform.y === 336)
+    ) &&
+    REQUIRED_PLATFORM_ANCHORS.every((anchor) =>
+      snapshot.platforms.some((platform) =>
+        platform.x === anchor.column * 32 + 32 &&
+        platform.y === anchor.y
+      )
+    );
+
   return snapshot &&
+    isValidRuleset(snapshot.ruleset) &&
     Number.isFinite(snapshot.elapsed) &&
+    Number.isFinite(snapshot.deathResolutionTimer) &&
+    snapshot.deathResolutionTimer >= 0 &&
+    snapshot.deathResolutionTimer <= 1 &&
+    Number.isFinite(snapshot.roundPauseTimer) &&
+    snapshot.roundPauseTimer >= 0 &&
+    snapshot.roundPauseTimer <= 1 &&
+    typeof snapshot.matchDraw === "boolean" &&
     Array.isArray(snapshot.players) &&
     snapshot.players.length === 2 &&
     snapshot.players.every((player) =>
+      player &&
       Number.isFinite(player.x) &&
       Number.isFinite(player.y) &&
       Number.isFinite(player.vx) &&
       Number.isFinite(player.vy) &&
       Number.isInteger(player.stocks) &&
-      VALID_POWERUPS.includes(player.powerup) &&
+      typeof player.falling === "boolean" &&
+      typeof player.disintegrating === "boolean" &&
+      Number.isFinite(player.disintegrateAge) &&
+      player.disintegrateAge >= 0 &&
+      player.disintegrateAge <= 0.5 &&
+      Number.isInteger(player.disintegrateFrame) &&
+      player.disintegrateFrame >= 0 &&
+      player.disintegrateFrame < 64 &&
+      Number.isInteger(player.disintegrateSeed) &&
+      player.disintegrateSeed >= 0 &&
+      player.disintegrateSeed <= 0xffffffff &&
+      typeof player.deathRegistered === "boolean" &&
+      Number.isFinite(player.gunFireTimer) &&
+      player.gunFireTimer >= 0 &&
+      player.gunFireTimer <= 1 &&
+      isPlayerPowerupAvailable(snapshot.ruleset, player.powerup) &&
       Number.isInteger(player.weaponAmmo) &&
       player.weaponAmmo >= 0 &&
       player.weaponAmmo <= 5 &&
+      Number.isFinite(player.powerupTimer) &&
+      player.powerupTimer >= 0 &&
+      player.powerupTimer <= 8 &&
+      (player.powerupTimer === 0 ||
+        player.powerup === "lightning" || player.powerup === "invisibility") &&
+      Number.isFinite(player.nettedTimer) &&
+      player.nettedTimer >= 0 &&
+      player.nettedTimer <= 5 &&
+      Number.isInteger(player.nettedEscapes) &&
+      player.nettedEscapes >= 0 &&
+      player.nettedEscapes <= 3 &&
+      Number.isFinite(player.weaseledTimer) &&
+      player.weaseledTimer >= 0 &&
+      player.weaseledTimer <= 3 &&
+      typeof player.chuteOpen === "boolean" &&
+      (!player.chuteOpen || player.powerup === "chute") &&
+      (player.hookTarget === null ||
+        (player.hookTarget &&
+          player.powerup === "hook" &&
+          (player.hookTarget.kind === "platform" || player.hookTarget.kind === "rope") &&
+          Number.isFinite(player.hookTarget.x) &&
+          Number.isFinite(player.hookTarget.y))) &&
+      Number.isFinite(player.hookTimer) &&
+      player.hookTimer >= 0 &&
+      player.hookTimer <= 1.5 &&
       (player.facing === 1 || player.facing === -1)
     ) &&
     Array.isArray(snapshot.scores) &&
     snapshot.scores.length === 2 &&
     snapshot.scores.every(Number.isInteger) &&
+    validPlatforms &&
     Array.isArray(snapshot.pickups) &&
     snapshot.pickups.every((pickup) =>
-      ["gun", "boots", "shield"].includes(pickup.type) &&
+      pickup &&
+      isPickupAvailable(snapshot.ruleset, pickup.type) &&
       Number.isFinite(pickup.x) &&
       Number.isFinite(pickup.y) &&
       Number.isFinite(pickup.vx) &&
@@ -255,12 +373,60 @@ function validGameSnapshot(snapshot) {
       Number.isFinite(pickup.life)
     ) &&
     Array.isArray(snapshot.projectiles) &&
+    snapshot.projectiles.length <= 128 &&
     snapshot.projectiles.every((projectile) =>
+      projectile &&
+      ["grenade", "puck", "net", "weasel", "boomerang"].includes(projectile.type) &&
+      (projectile.ownerId === 1 || projectile.ownerId === 2) &&
       Number.isFinite(projectile.x) &&
       Number.isFinite(projectile.y) &&
       Number.isFinite(projectile.vx) &&
+      Number.isFinite(projectile.vy) &&
+      Number.isFinite(projectile.age) &&
+      projectile.age >= 0 &&
+      projectile.age <= 4 &&
       Number.isFinite(projectile.life) &&
-      (projectile.owner === 1 || projectile.owner === 2)
+      projectile.life >= 0 &&
+      projectile.life <= 4 &&
+      typeof projectile.returning === "boolean" &&
+      (projectile.hitPlayerId === null ||
+        projectile.hitPlayerId === 1 ||
+        projectile.hitPlayerId === 2)
+    ) &&
+    Array.isArray(snapshot.mines) &&
+    snapshot.mines.length <= 32 &&
+    snapshot.mines.every((mine) =>
+      mine &&
+      (mine.ownerId === 1 || mine.ownerId === 2) &&
+      Number.isFinite(mine.x) &&
+      Number.isFinite(mine.y) &&
+      Number.isFinite(mine.age) &&
+      mine.age >= 0 &&
+      mine.age <= 18 &&
+      Number.isFinite(mine.life) &&
+      mine.life >= 0 &&
+      mine.life <= 18
+    ) &&
+    Array.isArray(snapshot.explosions) &&
+    snapshot.explosions.length <= 128 &&
+    snapshot.explosions.every((explosion) =>
+      explosion &&
+      Number.isFinite(explosion.x) &&
+      Number.isFinite(explosion.y) &&
+      Number.isFinite(explosion.age) &&
+      explosion.age >= 0 &&
+      Number.isFinite(explosion.life) &&
+      explosion.life > 0 &&
+      explosion.life <= 0.4
+    ) &&
+    Array.isArray(snapshot.pickupPops) &&
+    snapshot.pickupPops.every((pop) =>
+      pop &&
+      Number.isFinite(pop.x) &&
+      Number.isFinite(pop.y) &&
+      Number.isFinite(pop.age) &&
+      pop.age >= 0 &&
+      pop.age <= 1
     ) &&
     (snapshot.winner === null || snapshot.winner === 1 || snapshot.winner === 2);
 }
@@ -288,11 +454,15 @@ function handleConnectionMessage(message) {
 
   if (role === "guest" && message.type === "state" && validGameSnapshot(message.game)) {
     game = message.game;
-    if (game.winner) {
+    authoritativeRulesetReceived = true;
+    updateRulesetStatus();
+    if ((game.winner || game.matchDraw) &&
+        game.deathResolutionTimer === 0 &&
+        game.roundPauseTimer === 0) {
       showWinner();
     } else {
       elements.matchResult.hidden = true;
-      setMatchStatus("Connected · first to three falls wins");
+      setMatchStatus("Connected · first to three knockouts wins");
     }
   }
 }
@@ -318,7 +488,9 @@ function onConnectionOpen(nextConnection) {
 
     mode = "lobby";
     role = null;
+    authoritativeRulesetReceived = false;
     cancelAnimationFrame(animationFrame);
+    updateRulesetStatus();
     showLobby();
     elements.invitePanel.hidden = true;
     elements.createRoom.disabled = false;
@@ -361,6 +533,8 @@ function failOnline(message) {
   mode = "lobby";
   role = null;
   onlineConnected = false;
+  authoritativeRulesetReceived = false;
+  updateRulesetStatus();
   showLobby();
   elements.invitePanel.hidden = true;
   elements.createRoom.disabled = false;
@@ -448,12 +622,22 @@ function leaveMatch() {
   mode = "lobby";
   role = null;
   onlineConnected = false;
+  authoritativeRulesetReceived = false;
+  updateRulesetStatus();
   showLobby();
   elements.invitePanel.hidden = true;
   elements.createRoom.disabled = false;
   elements.localGame.disabled = false;
   elements.joinRoom.disabled = false;
   setLobbyStatus("Ready");
+}
+
+function requestRematch() {
+  if (mode === "online" && role === "guest") {
+    connection?.send({ type: "rematch" });
+    return;
+  }
+  if (mode !== "lobby") beginMatch(mode, role);
 }
 
 function submitControl(playerNumber, control, isDown) {
@@ -484,6 +668,21 @@ function findPlayerForKey(code) {
 }
 
 window.addEventListener("keydown", (event) => {
+  if (event.code === "Enter" && !event.repeat) {
+    if ((game.winner || game.matchDraw) &&
+        game.deathResolutionTimer === 0 &&
+        game.roundPauseTimer === 0) {
+      event.preventDefault();
+      requestRematch();
+      return;
+    }
+    if (mode === "lobby" && event.target === document.body) {
+      event.preventDefault();
+      elements.localGame.click();
+      return;
+    }
+  }
+
   const mapped = findPlayerForKey(event.code);
   if (!mapped || mode === "lobby") return;
   event.preventDefault();
@@ -519,6 +718,11 @@ elements.localGame.addEventListener("click", () => {
   closePeer();
   beginMatch("local");
 });
+elements.rulesetSelect.addEventListener("change", () => {
+  selectedRuleset = elements.rulesetSelect.value;
+  game = createGame(selectedRuleset);
+  updateRulesetStatus();
+});
 elements.createRoom.addEventListener("click", createOnlineRoom);
 elements.joinForm.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -542,13 +746,7 @@ elements.copyInvite.addEventListener("click", async () => {
   }
 });
 elements.leaveGame.addEventListener("click", leaveMatch);
-elements.rematch.addEventListener("click", () => {
-  if (mode === "online" && role === "guest") {
-    connection?.send({ type: "rematch" });
-    return;
-  }
-  beginMatch(mode, role);
-});
+elements.rematch.addEventListener("click", requestRematch);
 
 const roomFromLink = new URL(window.location.href).searchParams.get("room");
 if (roomFromLink && /^[A-HJ-NP-Z2-9]{6}$/i.test(roomFromLink)) {
@@ -556,3 +754,4 @@ if (roomFromLink && /^[A-HJ-NP-Z2-9]{6}$/i.test(roomFromLink)) {
 }
 
 drawGame(context, game, elements.canvas.width / WORLD.width);
+updateRulesetStatus();
