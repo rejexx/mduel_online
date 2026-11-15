@@ -20,12 +20,12 @@ Open <http://localhost:8080>.
 
 ### Controls
 
-- **Player 1:** Left/right arrows move, up jumps/climbs, down crouches/climbs down; press down while moving to roll. Press Enter to duel or fire a pickup.
+- **Player 1:** Left/right arrows move, up jumps/climbs, down crouches/climbs down; press down while moving to roll. Press Enter in the lobby to start local play, during a match to duel/fire, or at the match result to rematch.
 - **Player 2:** A/D move, W jumps/climbs, S crouches/climbs down; press S while moving to roll. Press Q to duel or fire a pickup.
 - Jump direction is set at takeoff; you cannot steer during a jump or collision fall.
 - Player pushes, trips, and wall impacts are falls that lead into a roll on landing. Wall impacts reflect horizontal momentum without adding a boost; jumps and falls from ledges land normally.
 - On a rope, release up/down to hold position; press left/right to jump off.
-- Press duel/fire to use most held power-ups. Boots boost a grounded jump; the chute opens in the air; the hook pulls toward a nearby rope or platform; warp moves you to a safe platform. A shield blocks attacks from the direction you're facing.
+- Press duel/fire to use most held power-ups. Boots boost a grounded jump; the chute opens in the air and allows left/right steering while falling; the hook pulls toward a nearby rope or platform; warp moves you to a safe platform. A shield blocks attacks from the direction you're facing.
 - A gun hit starts a hands-up falling pose as the player pixel-disintegrates over 0.5 seconds; other knockouts sink into the pit. Knockouts clear all power-ups. After the first knockout, play continues for about one second so a second fall can make the round a draw; then the score is shown for one second before both players reset.
 - On touch devices, use the on-screen buttons.
 - First player to knock out the other player three times wins.
@@ -59,15 +59,15 @@ and [`pickup.cpp`](https://github.com/pospi/mduel-ds/blob/master/code/source/pic
 | Power-up | Roster | What it does in the reference game | Browser remake |
 | --- | --- | --- | --- |
 | Skull | Original and Millennium Edition | Immediately kills the player who collects it. | Collecting it knocks out that player. |
-| Lightning / 1000V | Original and Millennium Edition | Electrifies its holder; contact can kill an unprotected opponent. | Contact knocks out the unprotected opponent; expires after 8 seconds. |
-| Invisibility | Original and Millennium Edition | Temporarily makes its holder invisible. | Uses the translucent invisible sprite for 8 seconds. |
+| Lightning / 1000V | Original and Millennium Edition | Electrifies its holder; contact can kill an unprotected opponent. | The player flashes and knocks out an unprotected opponent on contact; expires after 8 seconds. |
+| Invisibility | Original and Millennium Edition | Temporarily makes its holder invisible. | Activates on pickup and stays translucent for 8 seconds; the action button does not toggle it. |
 | Mine | Original and Millennium Edition | Lets its holder place a mine as a trap. | Fire places an armed ground mine; an opponent stepping on it is knocked out. |
 | Gun | Original and Millennium Edition | Fires a limited-use attack; the Millennium Edition version has five shots. | Five standing-only, stationary hitscan shots; shields block from the front. |
 | Explode / TNT | Original and Millennium Edition | Explodes floor/platform tiles; TNT remains an active pickup that collides with tiles. | Bouncing TNT destroys its impact tile and adjacent non-spawn tiles. |
 | Boots | Millennium Edition | Gives the holder a stronger jump when activated. | Fire boosts a grounded jump; stays equipped. |
-| Grenade | Millennium Edition | Throws an explosive projectile. | Explodes on impact and knocks back nearby players. |
+| Grenade | Millennium Edition | Throws an explosive projectile. | Destroys nearby non-spawn platforms on impact without affecting players. |
 | Puck | Millennium Edition | Throws a puck projectile. | Fast bouncing projectile that knocks back an opponent. |
-| Chute (parachute) | Millennium Edition | Slows falling while activated in the air. | Fire deploys it while airborne; slows descent until landing. |
+| Chute (parachute) | Millennium Edition | Slows falling while activated in the air. | Fire deploys it while airborne; slows descent and allows left/right steering until landing. |
 | Hook | Millennium Edition | Grabs a nearby rope or floor edge to recover/climb. | Pulls the player to a nearby rope or platform. |
 | Warp | Millennium Edition | Teleports its holder when activated. | Moves the holder to a safe platform away from the opponent. |
 | Magnet | Millennium Edition | Pulls pickups toward its holder and can pull the opponent's weapon away from the front. | Pulls nearby pickups; fire disarms an opponent in front. |
@@ -75,7 +75,7 @@ and [`pickup.cpp`](https://github.com/pospi/mduel-ds/blob/master/code/source/pic
 | Shield | Millennium Edition | Protects against attacks from the shielded side. | Persistent, directional block against melee, projectiles, and gunfire. |
 | Dunce | Millennium Edition | Adds a dunce-hat visual to the holder. | Adds a visible dunce hat. |
 | Weasel | Millennium Edition | Fires a weasel projectile. | Projectile briefly reverses the opponent's movement controls. |
-| Boomerang | Millennium Edition | Throws a boomerang projectile that returns to its holder. | Knocks back an opponent, returns, and restores itself if the holder is unarmed. |
+| Boomerang | Millennium Edition | Throws a boomerang projectile that returns to its holder. | Knocks back opponents it hits on the ground or in the air unless a facing shield blocks it; returns and restores itself if the holder is unarmed. |
 
 Choose **Original** (six pickups) or **Millennium Edition** (all eighteen) before
 local play or room creation. The host's edition is authoritative online; guests

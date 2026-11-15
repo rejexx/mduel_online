@@ -159,8 +159,6 @@ const playerSprites = [1, 2].map((id) => {
 });
 const invisiblePlayerSprite = new Image();
 invisiblePlayerSprite.src = "/assets/mduel/playerSpriteInvisible.png";
-const lightningPlayerSprite = new Image();
-lightningPlayerSprite.src = "/assets/mduel/playerSprite1000V.png";
 const platformSprite = new Image();
 platformSprite.src = "/assets/mduel/main_platform.png";
 const spawnPlatformSprite = new Image();
@@ -357,7 +355,13 @@ function updatePlayer(player, input, delta, game) {
   }
   if (player.inPit) {
     player.pitTimer += delta;
+    const previousBottom = player.y + PLAYER_HEIGHT;
     player.y += player.vy * delta;
+    if (player.disintegrating &&
+        previousBottom < PIT_SURFACE_Y &&
+        player.y + PLAYER_HEIGHT >= PIT_SURFACE_Y) {
+      game.pitSplashes.push({ x: player.x + PLAYER_WIDTH / 2, age: 0 });
+    }
     player.vx = 0;
     player.climbAnimationDirection = 0;
     player.jumpAnimation = null;
@@ -433,6 +437,9 @@ function updatePlayer(player, input, delta, game) {
       player.vx = player.facing * RUN_SPEED;
     } else if (player.climbing) {
       player.vx = 0;
+    } else if (player.chuteOpen) {
+      player.vx = direction * RUN_SPEED;
+      if (direction !== 0) player.facing = direction;
     } else if (player.grounded) {
       player.vx = player.crouching ? 0 : direction * RUN_SPEED;
       if (!player.crouching && direction !== 0) player.facing = direction;
@@ -813,6 +820,8 @@ function activatePowerup(game, player) {
         fireGun(game, player);
       }
       return true;
+    case "invisibility":
+      return true;
     case "mine":
       if (player.grounded) {
         game.mines.push({
@@ -1027,25 +1036,40 @@ function resolveAttacks(players) {
   }
 }
 
+function destroyPlatforms(game, x, y, radius) {
+  const destroyed = game.platforms.filter((platform) => {
+    if (platform.spawn) return false;
+    const nearestX = Math.max(platform.x, Math.min(x, platform.x + platform.width));
+    return Math.hypot(x - nearestX, y - platform.y) <= radius;
+  });
+  if (destroyed.length === 0) return;
+
+  const destroyedSet = new Set(destroyed);
+  game.platforms = game.platforms.filter((platform) => !destroyedSet.has(platform));
+  for (const player of game.players) {
+    if (!player.grounded) continue;
+    const feet = playerFeet(player);
+    if (destroyed.some((platform) =>
+      Math.abs(player.y + PLAYER_HEIGHT - platform.y) <= 2 &&
+      feet.right > platform.x &&
+      feet.left < platform.x + platform.width
+    )) {
+      player.grounded = false;
+      player.falling = true;
+      player.jumpAnimation = null;
+      player.impactAnimation = "fall";
+    }
+  }
+}
+
 function detonateGrenade(game, projectile) {
-  const radius = 92;
   game.explosions.push({
     x: projectile.x,
     y: projectile.y,
     age: 0,
     life: 0.38
   });
-  for (const player of game.players) {
-    if (player.inPit) continue;
-    const centerX = player.x + PLAYER_WIDTH / 2;
-    const centerY = player.y + PLAYER_HEIGHT / 2;
-    const distance = Math.hypot(centerX - projectile.x, centerY - projectile.y);
-    if (distance > radius) continue;
-    const direction = Math.sign(centerX - projectile.x) || (player.id === projectile.ownerId ? -1 : 1);
-    if (shieldFaces(player, Math.sign(projectile.x - centerX))) continue;
-    launchPlayer(player, direction, -220, "explosion", 280);
-    player.stun = Math.max(player.stun, 0.16);
-  }
+  destroyPlatforms(game, projectile.x, projectile.y, 48);
 }
 
 function hitByProjectile(game, projectile, target) {
@@ -1057,10 +1081,6 @@ function hitByProjectile(game, projectile, target) {
       projectile.hitPlayerId = target.id;
       return false;
     }
-    return true;
-  }
-  if (projectile.type === "grenade") {
-    detonateGrenade(game, projectile);
     return true;
   }
   if (projectile.type === "net") {
@@ -1169,16 +1189,29 @@ function updateProjectiles(game, delta) {
 
     let consumed = false;
     for (const target of game.players) {
-      if (target.inPit || target.id === projectile.ownerId ||
+      if (projectile.type === "grenade" || target.inPit || target.id === projectile.ownerId ||
           (projectile.type === "boomerang" &&
             projectile.returning && projectile.hitPlayerId === target.id)) {
         continue;
       }
       const bounds = playerBounds(target);
-      if (projectile.x < bounds.left - 10 ||
-          projectile.x > bounds.right + 10 ||
-          projectile.y < bounds.top - 10 ||
-          projectile.y > bounds.bottom + 10) {
+      const hitbox = projectile.type === "boomerang"
+        ? {
+          left: bounds.left - 10,
+          right: bounds.right + 10,
+          top: target.y + 4,
+          bottom: target.y + PLAYER_HEIGHT - 4
+        }
+        : {
+          left: bounds.left - 10,
+          right: bounds.right + 10,
+          top: bounds.top - 10,
+          bottom: bounds.bottom + 10
+        };
+      if (projectile.x < hitbox.left ||
+          projectile.x > hitbox.right ||
+          projectile.y < hitbox.top ||
+          projectile.y > hitbox.bottom) {
         continue;
       }
       consumed = hitByProjectile(game, projectile, target);
@@ -1316,27 +1349,12 @@ function updatePickups(game, delta) {
         pickup.x - PICKUP_RADIUS <= candidate.x + candidate.width
       );
       if (platform) {
-        const platformCenter = platform.x + platform.width / 2;
-        const destroyed = game.platforms.filter((candidate) =>
-          !candidate.spawn &&
-          candidate.y === platform.y &&
-          Math.abs(candidate.x + candidate.width / 2 - platformCenter) <= 32
+        destroyPlatforms(
+          game,
+          platform.x + platform.width / 2,
+          platform.y,
+          32
         );
-        const destroyedSet = new Set(destroyed);
-        game.platforms = game.platforms.filter((candidate) => !destroyedSet.has(candidate));
-        for (const player of game.players) {
-          if (!player.grounded || Math.abs(player.y + PLAYER_HEIGHT - platform.y) > 2) {
-            continue;
-          }
-          const feet = playerFeet(player);
-          if (destroyed.some((tile) =>
-            feet.right > tile.x && feet.left < tile.x + tile.width
-          )) {
-            player.grounded = false;
-            player.falling = true;
-            player.impactAnimation = "fall";
-          }
-        }
         game.explosions.push({
           x: pickup.x,
           y: pickup.y,
@@ -1462,10 +1480,12 @@ function beginDeathResolution(game, deadPlayers) {
     if (!player.inPit) {
       player.inPit = true;
       player.pitTimer = 0;
-      player.y = PIT_SURFACE_Y - PLAYER_HEIGHT;
-      game.pitSplashes.push({ x: player.x + PLAYER_WIDTH / 2, age: 0 });
+      if (!player.disintegrating) {
+        player.y = PIT_SURFACE_Y - PLAYER_HEIGHT;
+        game.pitSplashes.push({ x: player.x + PLAYER_WIDTH / 2, age: 0 });
+      }
     }
-    player.vy = player.disintegrating ? 0 : DEATH_SINK_SPEED;
+    player.vy = DEATH_SINK_SPEED;
     player.vx = 0;
     player.rolling = false;
     player.rollTimer = 0;
@@ -1689,11 +1709,11 @@ function drawPlayer(context, player, elapsed) {
   if (player.disintegrating) return;
   const image = player.powerup === "invisibility"
     ? invisiblePlayerSprite
-    : player.powerup === "lightning"
-      ? lightningPlayerSprite
-      : playerSprites[player.id - 1];
+    : playerSprites[player.id - 1];
   const blink = player.stun > 0 && Math.floor(player.stun * 24) % 2 === 0;
-  if (blink) return;
+  const lightningBlink = player.powerup === "lightning" &&
+    Math.floor(elapsed * 12) % 2 === 0;
+  if (blink || lightningBlink) return;
   const frame = getPlayerFrame(player, elapsed);
 
   if (image.complete && image.naturalWidth > 0) {
@@ -1748,19 +1768,6 @@ function drawPlayerEffects(context, player, elapsed) {
     context.arc(centerX, top - 8, 24, Math.PI, 0);
     context.closePath();
     context.fill();
-  }
-  if (player.powerup === "lightning" && !player.inPit) {
-    context.strokeStyle = "#fff37a";
-    context.lineWidth = 2;
-    for (let arc = 0; arc < 3; arc += 1) {
-      const startY = top + 6 + arc * 16;
-      const offset = Math.sin(elapsed * 24 + arc * 2) * 5;
-      context.beginPath();
-      context.moveTo(player.x + 8 + offset, startY);
-      context.lineTo(player.x + 1 - offset, startY + 7);
-      context.lineTo(player.x + 8 + offset, startY + 12);
-      context.stroke();
-    }
   }
   if (player.nettedTimer > 0 && !player.inPit) {
     context.strokeStyle = "#f2f4ff";

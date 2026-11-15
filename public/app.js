@@ -632,6 +632,14 @@ function leaveMatch() {
   setLobbyStatus("Ready");
 }
 
+function requestRematch() {
+  if (mode === "online" && role === "guest") {
+    connection?.send({ type: "rematch" });
+    return;
+  }
+  if (mode !== "lobby") beginMatch(mode, role);
+}
+
 function submitControl(playerNumber, control, isDown) {
   if (mode === "lobby") return;
   if (mode === "online" && ((role === "host" && playerNumber !== 1) ||
@@ -660,6 +668,21 @@ function findPlayerForKey(code) {
 }
 
 window.addEventListener("keydown", (event) => {
+  if (event.code === "Enter" && !event.repeat) {
+    if ((game.winner || game.matchDraw) &&
+        game.deathResolutionTimer === 0 &&
+        game.roundPauseTimer === 0) {
+      event.preventDefault();
+      requestRematch();
+      return;
+    }
+    if (mode === "lobby" && event.target === document.body) {
+      event.preventDefault();
+      elements.localGame.click();
+      return;
+    }
+  }
+
   const mapped = findPlayerForKey(event.code);
   if (!mapped || mode === "lobby") return;
   event.preventDefault();
@@ -723,13 +746,7 @@ elements.copyInvite.addEventListener("click", async () => {
   }
 });
 elements.leaveGame.addEventListener("click", leaveMatch);
-elements.rematch.addEventListener("click", () => {
-  if (mode === "online" && role === "guest") {
-    connection?.send({ type: "rematch" });
-    return;
-  }
-  beginMatch(mode, role);
-});
+elements.rematch.addEventListener("click", requestRematch);
 
 const roomFromLink = new URL(window.location.href).searchParams.get("room");
 if (roomFromLink && /^[A-HJ-NP-Z2-9]{6}$/i.test(roomFromLink)) {
